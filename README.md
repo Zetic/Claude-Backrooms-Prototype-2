@@ -30,8 +30,9 @@ The URL hash keeps the seed, position, zoom and toggles
 
 ```
 Areas        what kind of place: Backrooms, Offices, Hotel, ...      areas.js
-  Territories   20-60 m blocks that tile the plane with no gaps        layout.js
-    Rooms          the floor plan inside each territory                 interior.js, zones.js
+  DNA          persistent architectural identity for a district/region areas.js
+    Territories   20-60 m ownership blocks that tile the plane          layout.js
+      Rooms         the floor plan inside each territory                 interior.js, zones.js
 Boundaries   the shared wall between two territories, with its doors  boundary.js
 ```
 
@@ -65,6 +66,28 @@ chunky and rectilinear rather than grid-like.
 Area roles: Backrooms is *base*; Offices, Hotel, Poolrooms and Parking are
 *districts*; Home is a *pocket*; Maintenance is a *network* (pockets plus
 bands).
+
+
+### Architecture DNA: continuity across territories
+
+Territories are generation ownership units, but they are no longer treated as
+independent architectural identities. Each district gets one deterministic
+architecture-DNA record (Backrooms/base space uses larger coarse DNA regions).
+Territories in that region inherit the same preferred axis, corridor width,
+module size, spine/cross-corridor lattice, density biases and zone-weight
+profile, with only small local variation.
+
+For Offices and Hotel this is also spatial: corridor spines first try to land
+on the district's shared world-coordinate lattice. Adjacent territories can
+therefore continue the same corridor line instead of independently choosing a
+new vertical/horizontal offset at every territory seam. If a territory is too
+small or the shared line cannot fit safely, it falls back to the old local
+placement rule. The DNA does **not** force every territory to be identical or
+turn a whole district into one corridor; it provides a common architectural
+language and a set of recurring circulation lines.
+
+Hover inspection shows the DNA key, preferred axis, corridor width and module
+size for the territory under the pointer.
 
 ### 3. Pair rules: how areas meet (areas.js, layout.js)
 
