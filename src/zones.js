@@ -732,6 +732,11 @@
    * bathroom (Z.noDoor).
    */
   GEN.guest = (Z, q, rng, st, o) => {
+    // Guest is an archetype, not a permission to stretch arbitrary leftover
+    // floor. The local space planner normally enforces this before selection;
+    // retain a defensive fallback for callers that explicitly force the type.
+    if (o && o.space && BR.spaceTypeCompatible && !BR.spaceTypeCompatible('hotel', 'guest', o.space,
+      Math.max(q[2]-q[0], q[3]-q[1]), Math.min(q[2]-q[0], q[3]-q[1]))) return GEN.open(Z, q, rng, st, o);
     const [x0, y0, x1, y1] = q, f = o.front || 'y0', hz = f[0] === 'y';
     const Wd = hz ? x1 - x0 : y1 - y0, D = hz ? y1 - y0 : x1 - x0, mir = rng.f() < 0.5;
     const X = (u, v) => (hz ? x0 + (mir ? Wd - u : u) : f === 'x0' ? x0 + v : x1 - v);
@@ -845,7 +850,8 @@
     pool: (U, V) => U >= 12 && V >= 9,
     house: (U, V) => U >= 6 && V >= 5,
     yard: () => true,
-    guest: () => true,
+    guest: (U, V, meta) => meta ? BR.spaceTypeCompatible('hotel', 'guest', meta, U, V) :
+      U <= 12 && V >= 4.5 && V <= 9.5,
     pools: (U, V) => U >= 10 && V >= 8,
     parking: (U, V) => U >= 16 && V >= 12,
     machinery: (U, V) => U * V >= 30
@@ -859,12 +865,13 @@
   };
 
   /** Pick a zone type for block q: theme weights, size rules, contrast with neighbours. */
-  function pickZoneType(rng, weights, q, avoid, depth) {
+  function pickZoneType(rng, weights, q, avoid, depth, meta) {
     const w = q[2] - q[0], h = q[3] - q[1], U = Math.max(w, h), V = Math.min(w, h), A = U * V;
     const out = {};
     let any = false;
     for (const t in weights) {
-      if (!FITS[t] || !FITS[t](U, V)) continue;
+      if (!FITS[t] || !FITS[t](U, V, meta)) continue;
+      if (meta && BR.spaceTypeCompatible && !BR.spaceTypeCompatible(meta.area, t, meta, U, V)) continue;
       let k = weights[t];
       if (t === 'split') k *= depth > 0 ? (depth === 1 && A > 900 ? 0.3 : 0) : 0.35 + A / 1000;
       if (t === 'open' && A > 250) k *= 1.3;              // big blocks: favour big spaces
@@ -898,5 +905,5 @@
     return Z;
   }
 
-  Object.assign(BR, { Zone, fillZone, plainZone, pickZoneType, ZONE_TYPES: Object.keys(FITS), LANDMARK_TYPES: Object.keys(LANDMARK_GEN) });
+  Object.assign(BR, { Zone, fillZone, plainZone, pickZoneType, ZONE_FITS: FITS, ZONE_TYPES: Object.keys(FITS), LANDMARK_TYPES: Object.keys(LANDMARK_GEN) });
 })(typeof window !== 'undefined' ? window : globalThis);
