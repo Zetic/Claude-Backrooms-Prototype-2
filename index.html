@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backrooms Map Prototype</title>
+<style>
+  :root {
+    --bg: #4e4c49; --panel: rgba(28, 27, 25, 0.9); --text: #e9e3d6; --muted: #a39d92;
+    --accent: #e5cc9b; --line: rgba(255, 255, 255, 0.09);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; touch-action: none; }
+  canvas.drag { cursor: grabbing; }
+  #hud { position: fixed; top: 12px; left: 12px; width: 276px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(6px); user-select: none; }
+  #hud h1 { font-size: 13px; margin: 0 0 10px; letter-spacing: .02em; color: var(--accent); font-weight: 600; cursor: pointer; }
+  .row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+  input[type=text] { flex: 1; min-width: 0; background: #1b1b1b; color: var(--text); border: 1px solid #3a3a3a;
+    border-radius: 6px; padding: 5px 7px; font: inherit; font-variant-numeric: tabular-nums; }
+  button { background: #2f2f2f; color: var(--text); border: 1px solid #444; border-radius: 6px; padding: 5px 9px;
+    font: inherit; cursor: pointer; }
+  button:hover { background: #3a3a3a; }
+  label.tg { display: flex; gap: 7px; align-items: center; color: var(--muted); cursor: pointer; padding: 1px 0; }
+  label.tg input { accent-color: #e5cc9b; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin: 4px 0 8px; }
+  .sec { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 8px 0 4px; }
+  #legend { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; margin-bottom: 8px; }
+  #legend div { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; }
+  #legend i { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.35); }
+  #info { min-height: 34px; color: var(--text); font-size: 12px; border-top: 1px solid var(--line); padding-top: 7px; }
+  #info b { color: var(--accent); font-weight: 600; }
+  #stats { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; border-top: 1px solid var(--line);
+    padding-top: 7px; margin-top: 7px; white-space: pre; }
+  #help { position: fixed; right: 12px; bottom: 12px; color: rgba(255,255,255,.55); font-size: 12px; background: rgba(0,0,0,.3);
+    padding: 5px 9px; border-radius: 6px; }
+  #hud.min > :not(h1) { display: none; }
+  @media (max-width: 520px) { #hud { width: calc(100vw - 24px); } #help { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <h1 title="click to collapse">Backrooms map prototype</h1>
+  <div class="row">
+    <input id="seed" type="text" spellcheck="false" aria-label="Seed">
+    <button id="rnd" title="New random seed">Random</button>
+  </div>
+  <div class="row">
+    <input id="goto" type="text" spellcheck="false" placeholder="go to x, y" aria-label="Go to coordinates">
+    <button id="home" title="Back to origin">Origin</button>
+  </div>
+  <div class="sec">Areas</div>
+  <div id="legend"></div>
+  <div class="sec">Show</div>
+  <div class="grid2">
+    <label class="tg"><input type="checkbox" id="o-walls" checked> Interior detail</label>
+    <label class="tg"><input type="checkbox" id="o-areaMap"> Area map</label>
+    <label class="tg"><input type="checkbox" id="o-territories"> Territories</label>
+    <label class="tg"><input type="checkbox" id="o-cells"> Super-cells</label>
+    <label class="tg"><input type="checkbox" id="o-rooms"> Room graph</label>
+  </div>
+  <div id="info">Hover the map to inspect it.</div>
+  <div id="stats"></div>
+</div>
+<div id="help">drag / WASD to pan &middot; wheel / +&minus; to zoom &middot; M area map</div>
+
+<script src="src/core.js"></script>
+<script src="src/areas.js"></script>
+<script src="src/layout.js"></script>
+<script src="src/zones.js"></script>
+<script src="src/interior.js"></script>
+<script src="src/boundary.js"></script>
+<script src="src/world.js"></script>
+<script src="src/render.js"></script>
+<script>
+(function () {
+  'use strict';
+  const BR = window.BR;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const $ = (id) => document.getElementById(id);
+  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms'];
+
+  // ---------- state (mirrored into the URL hash so views are shareable)
+  const Q = new URLSearchParams(location.hash.slice(1));
+  const state = {
+    seed: Q.has('seed') ? Q.get('seed') : '31337',
+    x: parseFloat(Q.get('x')) || 0,
+    y: parseFloat(Q.get('y')) || 0,
+    zoom: parseFloat(Q.get('z')) || 2,
+    opts: { walls: Q.get('walls') !== '0' }
+  };
+  for (const k of OPTS) if (k !== 'walls') state.opts[k] = Q.get(k) === '1';
+  const hideHud = Q.get('hud') === '0';
+  if (hideHud) { $('hud').style.display = 'none'; $('help').style.display = 'none'; }
+  const ZMIN = 0.08, ZMAX = 40;
+
+  function seedNum(s) {
+    if (/^-?\d+$/.test(s.trim())) return (parseInt(s, 10) >>> 0);
+    let h = 0x811c9dc5;                                   // FNV-1a for text seeds
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return h >>> 0;
+  }
+  let world = new BR.World(seedNum(state.seed));
+
+  // ---------- legend
+  for (const k of BR.AREA_ORDER) {
+    const A = BR.AREAS[k], d = document.createElement('div');
+    const col = A.color || '#e5cc9b';
+    d.innerHTML = '<i style="background:' + col + '"></i>' + A.name;
+    d.title = A.role;
+    $('legend').appendChild(d);
+  }
+
+  // ---------- canvas sizing
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    dirty = true;
+  }
+
+  // ---------- render loop: generation is time-boxed; while the view is
+  // filling in, most frames generate and only every few hundred ms redraw
+  // ---------- render loop: the renderer draws into cached tiles; each frame
+  // blits them and spends a time budget building the missing ones
+  let dirty = true, pending = false, lastItems = { tiles: 0, built: 0, mode: '' }, frameMs = 0;
+  const GEN_BUDGET = 14;
+  function frame() {
+    if (dirty || pending) {
+      const t0 = performance.now();
+      const view = { cx: state.x, cy: state.y, zoom: state.zoom, w: W, h: H, dpr: DPR };
+      lastItems = BR.draw(ctx, world, view, Object.assign({ hover: hoverKey }, state.opts), GEN_BUDGET);
+      frameMs = performance.now() - t0;
+      pending = !lastItems.done;
+      dirty = false;
+      updateStats();
+    }
+    window.__ready = !pending && !dirty;
+    requestAnimationFrame(frame);
+  }
+
+  function updateStats() {
+    const s = world.stats;
+    $('stats').textContent =
+      'x ' + state.x.toFixed(0).padStart(7) + '   y ' + state.y.toFixed(0).padStart(7) + '   zoom ' + state.zoom.toFixed(2) + '\n' +
+      'view: ' + lastItems.mode + ' · ' + lastItems.tiles + ' tiles' + (pending ? '  (generating…)' : '') + '\n' +
+      'built: ' + world.plans.size + ' plans · ' + s.interiorsBuilt + ' interiors (' + (s.interiorMs / Math.max(1, s.interiorsBuilt)).toFixed(2) + ' ms avg)\n' +
+      'frame: ' + frameMs.toFixed(1) + ' ms';
+  }
+
+  // ---------- hover inspection
+  let hoverKey = null;
+  function inspect(px, py) {
+    const x = state.x + (px - W / 2) / state.zoom, y = state.y + (py - H / 2) / state.zoom;
+    const r = world.inspect(x, y);
+    if (!r) { $('info').textContent = ''; return; }
+    const T = r.territory, b = T.bbox;
+    const A = BR.AREAS[r.area];
+    let html = '<b>' + A.name + '</b> &middot; ' + A.role + (r.area !== r.base ? ' in ' + BR.AREAS[r.base].name : '') +
+      '<br>territory ' + T.key + ' &middot; ' + (b[2] - b[0]) + '×' + (b[3] - b[1]) + ' m';
+    if (r.block) html += '<br>zone ' + r.block.zone + (r.block.sub.length > 1 ? ' (' + r.block.sub.join(' › ') + ')' : '') + (r.room ? ' &middot; ' + r.room.kind : '');
+    $('info').innerHTML = html;
+    if (hoverKey !== T.key) { hoverKey = T.key; dirty = true; }
+  }
+
+  let hashTimer = 0;
+  function saveHash() {
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      const p = new URLSearchParams();
+      p.set('seed', state.seed); p.set('x', state.x.toFixed(1)); p.set('y', state.y.toFixed(1)); p.set('z', state.zoom.toFixed(3));
+      for (const k of OPTS) if (k !== 'walls' && state.opts[k]) p.set(k, '1');
+      if (!state.opts.walls) p.set('walls', '0');
+      if (hideHud) p.set('hud', '0');
+      history.replaceState(null, '', '#' + p.toString());
+    }, 250);
+  }
+  function changed() { dirty = true; saveHash(); }
+
+  // ---------- input: drag, wheel, keys, touch pinch
+  let drag = null;
+  const pointers = new Map();
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) { drag = { x: e.clientX, y: e.clientY }; canvas.classList.add('drag'); }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) { inspect(e.clientX, e.clientY); return; }
+    const prev = pointers.get(e.pointerId);
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d0 = Math.hypot(a.x - b.x, a.y - b.y);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const [c, d] = [...pointers.values()];
+      const d1 = Math.hypot(c.x - d.x, c.y - d.y);
+      if (d0 > 0) zoomAt((c.x + d.x) / 2, (c.y + d.y) / 2, d1 / d0);
+      return;
+    }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (drag) {
+      state.x -= (e.clientX - prev.x) / state.zoom;
+      state.y -= (e.clientY - prev.y) / state.zoom;
+      changed();
+    }
+  });
+  const up = (e) => { pointers.delete(e.pointerId); if (!pointers.size) { drag = null; canvas.classList.remove('drag'); } };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+
+  function zoomAt(px, py, f) {
+    const nz = Math.min(ZMAX, Math.max(ZMIN, state.zoom * f));
+    const wx = state.x + (px - W / 2) / state.zoom, wy = state.y + (py - H / 2) / state.zoom;
+    state.zoom = nz;
+    state.x = wx - (px - W / 2) / nz; state.y = wy - (py - H / 2) / nz;
+    changed();
+  }
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0015)));
+  }, { passive: false });
+
+  const keys = new Set();
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase();
+    if (k === 'm') { state.opts.areaMap = !state.opts.areaMap; $('o-areaMap').checked = state.opts.areaMap; changed(); return; }
+    if (k === '+' || k === '=') { zoomAt(W / 2, H / 2, 1.25); return; }
+    if (k === '-' || k === '_') { zoomAt(W / 2, H / 2, 0.8); return; }
+    keys.add(k);
+  });
+  window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+  let lastT = performance.now();
+  (function keyLoop(t) {
+    const dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+    let vx = 0, vy = 0;
+    if (keys.has('a') || keys.has('arrowleft')) vx -= 1;
+    if (keys.has('d') || keys.has('arrowright')) vx += 1;
+    if (keys.has('w') || keys.has('arrowup')) vy -= 1;
+    if (keys.has('s') || keys.has('arrowdown')) vy += 1;
+    if (vx || vy) { const sp = 700 / state.zoom * (keys.has('shift') ? 3 : 1); state.x += vx * sp * dt; state.y += vy * sp * dt; changed(); }
+    requestAnimationFrame(keyLoop);
+  })(lastT);
+
+  // ---------- HUD
+  $('seed').value = state.seed;
+  $('seed').addEventListener('change', () => { state.seed = $('seed').value.trim() || '0'; world = new BR.World(seedNum(state.seed)); changed(); });
+  $('rnd').addEventListener('click', () => {
+    state.seed = String((Math.random() * 1e9) >>> 0);   // UI only; generation itself never uses Math.random
+    $('seed').value = state.seed; world = new BR.World(seedNum(state.seed)); changed();
+  });
+  $('home').addEventListener('click', () => { state.x = 0; state.y = 0; changed(); });
+  $('goto').addEventListener('change', () => {
+    const m = $('goto').value.split(/[ ,]+/).map(Number);
+    if (m.length >= 2 && m.every(Number.isFinite)) { state.x = m[0]; state.y = m[1]; changed(); }
+  });
+  for (const k of OPTS) {
+    const el = $('o-' + k);
+    el.checked = state.opts[k];
+    el.addEventListener('change', () => { state.opts[k] = el.checked; changed(); });
+  }
+  document.querySelector('#hud h1').addEventListener('click', () => $('hud').classList.toggle('min'));
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+  window.__world = () => world;
+})();
+</script>
+</body>
+</html>
