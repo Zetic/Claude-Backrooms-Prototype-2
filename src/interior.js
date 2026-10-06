@@ -183,7 +183,7 @@
       for(const b of out){
         if(b.k===HALL||b.k===SERVICE||!b.space||b.anchor)continue;
         const cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2,d=(cx-a.x)**2+(cy-a.y)**2;
-        if(d<bd&&Math.min(b.x1-b.x0,b.y1-b.y0)>=6){bd=d;best=b;}
+        if(d<bd&&Math.min(b.x1-b.x0,b.y1-b.y0)>=4&&(b.x1-b.x0)*(b.y1-b.y0)>=24){bd=d;best=b;}
       }
       if(best){best.zt=a.zone;best.anchor=a.id;best.anchorKind=a.kind;}
     }
