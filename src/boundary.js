@@ -5,8 +5,7 @@
  * interiors: a door is only placed where there is floor on both sides
  * (probed 0.6 m in from a thin wall, 1.6 m from a thick one). Door spots
  * prefer corridors, hallways and aisles on both sides, so circulation lines
- * up across territories, and avoid maintenance strips unless the boundary
- * belongs to a band. Matching DNA circulation contracts are stronger: the
+ * up across territories. Matching selected-route contracts are stronger: the
  * overlapping corridor width becomes a structural continuation with no seam
  * wall or redundant door. Open boundaries have no wall; every pair of rooms
  * that faces across them is linked.
