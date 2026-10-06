@@ -21,7 +21,7 @@ An infinite, deterministic 2-D map of a Backrooms-style world. Open
 | Zoom | mouse wheel, pinch, `+` / `-` |
 | Area map | `M` or the toggle |
 | Overlays | Territories, Super-cells (the lattice), Room graph |
-| Generation stage | manifestation → structural program → DNA → selected structure → obligations → realized routes → local space plan → boundaries |
+| Generation stage | manifestation → structural program → DNA → selected structure → world network → physical route space → territory intersection → buildable floor → interiors |
 | Debug overlays | manifestation lobes/cuts, program roles, DNA/structure, circulation, parcels/access/violations, continuations |
 | Inspect | hover: semantic area, manifestation form/scale, program role, DNA, circulation, local-space geometry/access, zone, room |
 
@@ -31,16 +31,12 @@ The URL hash keeps the seed, position, zoom and toggles
 ## How a map is made
 
 ```
-Semantic area       architectural identity / vocabulary                    areas.js
-  Manifestation       spatial extent: compact/branched/interwoven/etc.      manifestation.js
-    Structural program generic internal roles: core/branch/open/service/... manifestation.js
-      Architecture DNA persistent module, axis and circulation language     areas.js
-        Structure       selected major/secondary/service circulation         structure.js
-          Territories     exact ownership blocks tiling the plane            layout.js
-            Obligations   clipped structure inside each territory            structure.js
-              Local plan  access catchments, local halls, usable parcels     spaceplan.js
-                Archetypes + detailed rooms                                  zones.js, interior.js
-Boundaries           reconcile structures, walls and doors                  boundary.js
+Semantic area → manifestation → structural program → Architecture DNA
+  World circulation → primary / secondary / local / service paths
+    Physical route space → canonical world footprints
+      Territory intersection → exact clipping, never adaptation
+        Buildable floor → footprint minus route reservations
+          Parcels → compatible semantic rooms → route interfaces
 ```
 
 The central distinction is now **identity versus extent**. An area name says
@@ -118,29 +114,37 @@ another area's pools, or another area's parking modules without the structural
 planner knowing those area names.
 
 Architecture DNA remains the persistent design-language layer: preferred axis,
-corridor width, module, candidate spine/cross lattice and density biases. These
+corridor width, module, axis preference and circulation density biases. These
 parameters are now also data-driven from area definitions rather than
 hard-coded Hotel/Office branches.
 
-The generic structure planner runs for every manifestation-bearing area. It
-creates a connected major trunk, optional major wing, secondary
-branches/bridges, service circulation when the structural program calls for
-it, junction/terminus nodes, and role-derived anchors. The structural program
-guides which candidate routes are selected and how much circulation a
-manifestation receives.
+The generic circulation planner runs once per manifestation before any
+territory or room generation. Its inputs are the structural program, lobe
+geometry, DNA, and access-depth policy. It never queries territories or
+interiors and contains no biome-name branches.
 
-Selected routes are clipped against territories as **obligations**. Each local
-realization remains explicit:
+A primary path organizes the core and a distant destination. Other program
+regions attach to that connected network using secondary or service paths.
+Occasional alternate approaches form loops. Void regions do not request
+access. Dead ends and asymmetric branches remain valid.
 
-- `exact` — planned world-space route fits directly;
-- `adapted` — deterministic local dogleg preserves the obligation;
-- `failed` — cannot safely fit; failure remains inspectable.
+Jittered sites inside architectural lobes measure access depth against the
+selected network. A bounded number of excessive-depth demands create **local
+paths in that same world network**. Their identity and extent belong to the
+manifestation, not a territory. Open regions tolerate more depth; density and
+DNA influence how much access is needed. Sites do not instantiate a regularly
+spaced corridor lattice. Unresolved demands remain explicit support-space
+outcomes when the route budget is exhausted.
 
-After the district-scale structure is realized, the generic local-space planner
-handles access depth, bounded local circulation, parcels and archetype
-compatibility. Poolrooms and Parking now use the same structure/local-space
-pipeline as the other manifestation-bearing areas rather than remaining on a
-separate special-case hall path.
+Every path has a stable ID across its turns and a separate ID for each
+rectilinear segment. Its width and footprint are fixed in world coordinates.
+Territories query every intersecting network, including networks from other
+semantic areas. A connector between fragmented lobes therefore continues
+through the intervening substrate and any pocket it crosses.
+
+Intersections are always `exact`: a thin slice of a route at an ownership edge
+is retained, rather than bending the route to fit that owner. Routes are
+reserved before ordinary interior geometry exists.
 
 
 ### 4. Pair rules: how areas meet (areas.js, layout.js)
@@ -178,67 +182,55 @@ wall-only corner contacts.
 
 All pair decisions are canonical and cached by the territory-pair key.
 
-### 5. Local space planning and interiors (spaceplan.js, interior.js, zones.js)
+### 5. Buildable space and interiors (spaceplan.js, interior.js, zones.js)
 
-For every territory covered by a manifestation structure plan, generation
-separates **space planning** from **semantic room generation**:
+For every manifestation territory and every territory intersecting a route:
 
-1. Realize district route obligations as exact/adapted/failed geometry.
-2. Analyze the residual floor as rectangles adjacent to circulation.
-3. If a region is too deep to be served directly, add a bounded local branch
-   that physically starts on its serving corridor. Derived local halls form a
-   tree rather than disconnected parallel strips.
-4. Subdivide the served mass into architectural parcels based on frontage,
-   depth, aspect ratio and the area's DNA module.
-5. Classify unsuitable or unserved residuals as support space instead of
-   forcing a dense room archetype into them.
-6. Only then select a semantic archetype compatible with the parcel.
+1. Clip canonical route footprints to the owned rectangles.
+2. Compute their union and subtract it from floor ownership.
+3. Merge residual bookkeeping cells into buildable rectangles.
+4. Derive parcels from actual route frontage and depth constraints.
+5. Keep deep, unsuitable, or unserved residuals as support floor.
+6. Select compatible semantic archetypes only inside that buildable space.
+7. Attach adjacent interiors to routes, then construct their walls/openings.
 
-The planner is generic. Current policies exist for all configured semantic
-areas, and every manifestation-bearing area now consumes the same structural
-and local-space pipeline. The important contract is independent of a
-particular room name: dense cellular archetypes require intentional access and
-a compatible geometry envelope.
+The parcel planner cannot create hallways. Dense archetypes require usable
+frontage on a real route and a valid geometry envelope. Support space can
+remain open or use compatible non-cellular architecture. Anchors attach to
+parcels after subtraction and cannot erase a route reservation.
 
-This prevents arbitrary residual rectangles from stretching their assigned
-semantic type. For example, `guest` is no longer accepted for any rectangle;
-it is one archetype constrained by the same generic parcel metadata used by
-the selector. Oversized/deep residual mass creates local circulation or becomes
-support/open architecture instead of being interpreted as one stretched room.
+Route space has plain corridor floor with a stable hierarchy-based treatment,
+so its colour does not change at a technical territory seam. Parking modules
+also require their complete module and edge margins to fit before placement;
+columns and bay markings cannot extend into adjacent route space.
 
-Planning is intentionally bounded:
+Planning limits are explicit:
 
-- at most 64 parcels per local-plan part;
-- at most 4 derived local routes;
-- at most 4 local service-depth levels;
-- direct rectangle/segment/graph operations only;
-- no raster flood-fill, open-ended search or regenerate-until-valid loop.
+- 96 route segments, 24 local paths, and 80 access-demand sites per network;
+- 64 semantic parcels per owned rectangle;
+- cap overflow remains covered as explicit support rectangles;
+- bounded rectangle/segment operations, with no runtime flood fill or global
+  traversal of the infinite world.
 
-Areas without a manifestation structure retain their established local
-grammar: Backrooms uses irregular subdivision, Home uses houses/gardens and
-Maintenance uses plant-room pockets.
+Areas without a manifestation or an intersecting world route retain their
+existing irregular, house, or utility grammar. Automatic Maintenance bands
+remain removed.
 
-After planning, `zones.js` supplies semantic detail (office, guest, open,
-gallery, courtyard, machinery, pools, parking, etc.), and `interior.js`
-connects the resulting block graph with circulation-first spanning connections
-and loops.
+### 6. Route interfaces and boundaries (boundary.js)
 
-### 6. Boundaries (boundary.js)
+Route fragments meeting inside an owner connect as a continuous network.
+At a shared territory edge, matching world route IDs remove the seam wall
+across the actual occupied interval and create direct room-graph links.
+This applies across semantic areas, different DNA records, thin/thick/open
+boundary policies, and seams that cut **along** a route as well as across it.
 
-Each shared wall is built once from the pair's rule and both interiors. Before
-ordinary door placement, matching **selected route identities** are reconciled.
-If the same district route reaches the same shared edge from both sides, that
-exact corridor-width interval is removed from the territory wall and linked
-directly as a `continuation`. The rest of the shared edge remains a
-normal wall, so only the architectural feature crosses the technical seam.
-Accidental corridor overlaps do not qualify: the stable circulation contract
-must match on both sides. A continuation also satisfies the pair's connectivity
-need, so a redundant normal seam door is not added.
+There is no route bend, doorway, or other architectural event at a technical
+seam. The surrounding non-route boundary still follows its pair rule.
+A route continuation satisfies the pair's connectivity need and suppresses
+redundant ordinary seam doors.
 
-For boundaries without a continuation, doors are probed on both sides; spots on
-corridors, halls and aisles are preferred, so circulation lines up across
-territories. Open boundaries have no wall, and every pair of rooms facing
-across them is linked.
+Other boundaries retain canonical pair rules, localized door placement and
+bounded bypass decisions. Open boundaries link facing rooms.
 
 ### The room graph
 
@@ -270,28 +262,21 @@ room in a 1.8 km square is reachable.
 
 ### Generation debugger
 
-Planner diagnostics are drawn as live overlays rather than cached map tiles.
-The **Generation stage** selector now exposes the full calculation:
+Planner diagnostics are live overlays above cached map tiles. The stage
+selector exposes manifestation, program, DNA, world access demand, world route
+network, physical route space, territory intersection, reserved intersections,
+remaining buildable space, interior parcels, and route interfaces.
 
-1. area manifestations;
-2. structural-program regions;
-3. Architecture DNA;
-4. candidate circulation lattice;
-5. selected structure;
-6. territory obligations;
-7. exact/adapted/failed circulation realization;
-8. local space planning;
-9. boundary reconciliation.
+The network and physical-space overlays work before any interior has been
+built. Later stages use cached reservation, parcel, and boundary records.
+Choosing an interior stage enables detail zoom so its data can be generated.
 
-The manifestation view shows the lobes that define each spatial occurrence and
-its substrate cuts. The structural-program view shows generic roles such as
-core, branch, open, service, connector, terminal and void before they become
-semantic room types.
+The route colours are pink (primary), cyan (secondary), green (local), and
+orange (service). Hover inspection includes the world route ID, intersecting
+networks, actual parcel frontage, support reasons, and exact reservation count.
 
-Local-space overlays continue to expose parcel boundaries, access ownership,
-derived local circulation and geometry/access violations. Debug rendering
-reads cached generation records; turning on an overlay does not rerun planning.
-
+See [the milestone review](docs/WORLD_SPACE_CIRCULATION.md) for reproducible
+views and validation evidence.
 
 ## Data API (for a game)
 
@@ -307,8 +292,10 @@ W.program(T)                                   // generic structural program
 W.programsIn(x0, y0, x1, y1)                   // visible structural programs
 W.architecture(T)                              // persistent architecture DNA
 W.structure(T)                                 // selected circulation/anchor structure
-W.structuresIn(x0, y0, x1, y1)                 // visible manifestation structures
-W.interior(T)                                  // -> { obligations, realizations, spacePlan, anchors,
+W.structuresIn(x0, y0, x1, y1)                 // intersecting world route networks
+W.routesIn(x0, y0, x1, y1)                     // canonical physical segments, no interiors
+W.interior(T)                                  // -> { routeNetworks, routeSpace, buildableSpace,
+                                               //      obligations, realizations, spacePlan, anchors,
                                                //      blocks, zones, rooms, links, walls, ... }
 W.boundary(A, B)                               // -> { wall, semantic, walls, doors, continuations, links }
 W.inspect(x, y)                                // area / manifestation / program role / structure / room
@@ -328,15 +315,18 @@ Geometry is in integer metres, with no rotations. Wall lists are flat
 | `areas.js` `CFG` | manifestation seed spacing, density and field warp |
 | `manifestation.js` | generic footprint grammars, scales, structural roles and role→archetype biases |
 | `layout.js` `CFG` | super-cell size, edge offsets, ear merge thresholds, bypass depth |
-| `structure.js` | generic manifestation route selection, hierarchy and role-derived anchors |
-| `spaceplan.js` | access/depth/frontage policies and hard parcel/local-route caps |
+| `structure.js` | world path selection, role-derived destinations, depth demand and network caps |
+| `spaceplan.js` | route subtraction, frontage/depth policies and parcel caps |
 | `zones.js` | semantic generators plus archetype compatibility filters |
 | `render.js` | colours, LOD thresholds, tile cache size and planner-debug overlays |
 
 ## Tests
 
+Run all canonical seeds with `node tests/run-all.js`, or a single suite:
+
 ```
 node tests/determinism.test.js [seed]
+node tests/circulation.test.js [seed]
 ```
 
 **Determinism:** the output does not depend on any of the following.
@@ -362,9 +352,13 @@ The suite also checks that different seeds give different maps.
 - Zero automatic Maintenance strips are generated.
 - Maintenance/Home pockets remain contained in one host and retain access.
 - Manifestation structure plans remain deterministic through aggressive cache
-  eviction and form connected major/secondary/service route graphs.
-- Territory route obligations remain explicit as exact/adapted/failed.
-- Local space planning obeys its hard parcel/route caps.
+  eviction and form connected world route graphs at all hierarchy levels.
+- Every physical route intersection is exact, with zero local adaptation.
+- World routing succeeds when territory and interior queries are forbidden.
+- Routes retain identity across three or more territories and semantic areas.
+- Rooms, walls, masses, pools, props and columns do not overlap route space.
+- Network and parcel planning obey their caps without losing floor coverage.
+- Territory parcel generation creates zero local hallway rectangles.
 - Occupiable parcels satisfy their access/geometry constraints.
 - Unserved floor never receives a dense cellular archetype.
 - Semantic archetypes are rejected when incompatible with parcel geometry;
@@ -391,9 +385,10 @@ All checks pass for seeds 31337, 7, 12345, 99 and 4242.
   useful archetype weights for those roles to produce convincing content.
 - Rooms are axis-aligned. Rotated wings from v1 remain intentionally excluded
   because integer-metre geometry keeps tiling and door probing exact.
-- Failed route obligations remain explicit. A future higher-level rerouter can
-  repair clusters of failures across a manifestation instead of relying only
-  on local dogleg adaptation.
+- World access demands are sampled rather than a complete continuous depth
+  solver. Cap-limited or deep residuals remain support floor.
+- Different manifestations connect through the established territory/room
+  graph; their route networks do not require a single global trunk.
 - Vertical connectivity is not planned yet; stairs remain decorative.
 - Version 1 is tagged `v1-final`; its old `sites.js`, `cluster.js` and
   `corridors.js` modules are unused.

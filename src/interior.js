@@ -1,17 +1,12 @@
 /*
  * interior.js - level 3: the rooms inside one territory.
  *
- *   1. obligations - selected district routes are realized first where the
- *                    area has a district structure plan
- *   2. local plan  - residual floor is divided into bounded access catchments,
- *                    local circulation and geometry-validated parcels
- *   3. blocks      - areas without district structure use their existing
- *                    irregular/hall/house/utility grammar
- *   4. zones       - semantic archetypes are selected only after geometry and
- *                    access are known; incompatible dense types are rejected
- *   5. connect     - shared walls between blocks: some open up, then a random
- *                  spanning tree of doors (circulation first) plus loops.
- *                  Doors are only placed where both sides are floor.
+ *   1. intersect canonical world route space with territory ownership
+ *   2. subtract reservations and parcel the remaining buildable floor
+ *   3. choose semantic rooms only inside those parcels; areas without a
+ *      manifestation or route retain their irregular/house/utility grammar
+ *   4. attach interior rooms to actual circulation frontage
+ *   5. connect shared block edges, then build walls around the reserved space
  *
  * The result lists rooms (graph nodes), links (graph edges inside the
  * territory) and drawing primitives, all in world coordinates.
@@ -111,62 +106,37 @@
   }
 
 
-  const flowFromObligation = (dna, o, status) => ({
-    key: o.routeId, dna: dna.key, kind: o.hierarchy, axis: o.axis, start: o.line, width: o.width, status
-  });
-
-  function realizeObligation(q, o, dna) {
-    const half=o.width/2,perp0=o.axis==='x'?q[1]:q[0],perp1=o.axis==='x'?q[3]:q[2];
-    const along0=o.axis==='x'?q[0]:q[1],along1=o.axis==='x'?q[2]:q[3];
-    const a=Math.max(o.s0,along0),b=Math.min(o.s1,along1);
-    const R={routeId:o.routeId,hierarchy:o.hierarchy,role:o.role,axis:o.axis,line:o.line,width:o.width,s0:a,s1:b,status:'failed',reason:null,shift:0,rects:[],flow:null};
-    if(b-a<0.75){R.reason='too-short';return R;}
-    const rect=(s0,p0,s1,p1)=>o.axis==='x'?[s0,p0,s1,p1]:[p0,s0,p1,s1];
-    if(o.line-half>=perp0&&o.line+half<=perp1){R.status='exact';R.rects=[rect(a,o.line-half,b,o.line+half)];R.flow=flowFromObligation(dna,o,'exact');return R;}
-    const avail0=Math.max(perp0,o.line-half),avail1=Math.min(perp1,o.line+half);
-    if(avail1-avail0<1||perp1-perp0<o.width){R.reason='insufficient-width';return R;}
-    const shifted=Math.max(perp0+half,Math.min(perp1-half,o.line)),delta=shifted-o.line;
-    if(Math.abs(delta)>Math.max(6,o.width*2.5)){R.reason='shift-too-large';return R;}
-    const L=b-a,turn=Math.min(Math.max(3,o.width*1.5),L/3);
-    if(L<turn*1.5){R.reason='no-turn-room';return R;}
-    const pieces=[];let m0=a,m1=b;
-    if(o.enters){const e=Math.min(b,a+turn),n0=avail0,n1=avail1;pieces.push(rect(a,n0,e,n1));
-      const c0=Math.min(o.line,shifted)-half,c1=Math.max(o.line,shifted)+half;
-      pieces.push(rect(Math.max(a,e-o.width),Math.max(perp0,c0),e,Math.min(perp1,c1)));m0=e-o.width/2;}
-    if(o.exits){const e=Math.max(a,b-turn),n0=avail0,n1=avail1;pieces.push(rect(e,n0,b,n1));
-      const c0=Math.min(o.line,shifted)-half,c1=Math.max(o.line,shifted)+half;
-      pieces.push(rect(e,Math.max(perp0,c0),Math.min(b,e+o.width),Math.min(perp1,c1)));m1=e+o.width/2;}
-    if(m1>m0)pieces.push(rect(m0,shifted-half,m1,shifted+half));
-    R.status='adapted';R.shift=delta;R.rects=pieces;R.flow=flowFromObligation(dna,o,'adapted');return R;
+  function realizeObligation(q, o) {
+    // Physical space was decided by the world network. Clipping preserves even
+    // narrow edge slices; shifting to fit an ownership rectangle is forbidden.
+    return {routeId:o.routeId,segmentId:o.segmentId,networkKey:o.networkKey,
+      hierarchy:o.hierarchy,role:o.role,axis:o.axis,line:o.line,width:o.width,
+      s0:o.s0,s1:o.s1,status:'exact',reason:null,shift:0,rects:[o.rect.slice()],
+      flow:{key:o.routeId,segmentId:o.segmentId,dna:o.dnaKey,network:o.networkKey,
+        kind:o.hierarchy,axis:o.axis,start:o.line,width:o.width,status:'exact'}};
   }
 
   function plannedBlocks(q, obligations, anchors, rng, st, area, out, realizations, spacePlans, planKey, program) {
     const outStart=out.length;
     const realized=[];
     for(const o of obligations){
-      const r=realizeObligation(q,o,st.dna);
+      const r=realizeObligation(q,o);
       realizations.push(r);
       if(r.status!=='failed')realized.push(r);
     }
 
-    // Major routes are already decided at district scope. Local space planning
-    // now determines how the residual floor is served and parcelled before any
-    // semantic room/zone generator is selected.
+    // All hierarchy levels already exist at world scope. Parcel generation
+    // consumes their exact reservations and cannot create or move circulation.
     const P=BR.planLocalSpace(q,realized,area,st.dna,planKey);
     spacePlans.push(P);
 
     const roleFor=(q2)=>program?BR.programRoleAt(program,(q2[0]+q2[2])/2,(q2[1]+q2[3])/2):null;
     for(const r of P.districtRoutes){
-      const b=blk(r.q,r.hierarchy==='service'?SERVICE:HALL);
+      const b=blk(r.q,HALL);
       b.flow=r.flow||null;b.flows=(r.flows||[]).slice();b.routeHierarchy=r.hierarchy;
       b.realization=r.realization;b.routeId=r.routeId;b.programRole=roleFor(r.q);out.push(b);
     }
-    for(const r of P.localRoutes){
-      const b=blk(r.q,HALL);
-      b.routeHierarchy='local';b.realization='local';b.routeId=r.routeId;b.localRoute=true;b.programRole=roleFor(r.q);
-      out.push(b);
-    }
-    for(const p of P.parcels){
+    for(const p of P.parcels.concat(P.remainders||[])){
       const b=blk(p.q,BLOCK),role=roleFor(p.q);
       b.programRole=role;
       b.space=Object.assign({id:p.id,area,programRole:role},p.meta);
@@ -430,7 +400,7 @@
       const pc = P(e, sp); uf.union(e.a, e.b); e.open = true;
       links.push({ a: rr[0], b: rr[1], x: pc[0], y: pc[1], w: e.len, kind: fa.key === fb.key ? 'route' : 'junction' });
     }
-    // Sub-room geometric slivers created where a dogleg or finite route end
+    // Sub-room geometric slivers created where a finite route end
     // cuts the partition are absorbed topologically by opening their longest
     // available short edge. They remain ordinary floor, not fake corridors.
     for (const e of adj) {
@@ -552,7 +522,7 @@
     // landmark: one huge block
     const r0 = rects[0], [w0, h0] = dims(r0);
     let landmark = null;
-    if (!structure.plan && A.landmarks && T.rects.length === 1 && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
+    if (!structure.plan && !structure.routes.length && A.landmarks && T.rects.length === 1 && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
       new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK)).f() < A.landmarkP * dna.landmarkBias) {
       landmark = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK + 1)).weighted(A.landmarks);
       if (landmark === 'longGallery' && Math.max(w0, h0) < 2.2 * Math.min(w0, h0)) landmark = 'grandHall';
@@ -561,11 +531,11 @@
       const [w, h] = dims(q);
       if (w <= 0 || h <= 0) return;
       if (landmark && ri === 0) { const b = blk(q, BLOCK, landmark); b.lm = true; blocks.push(b); return; }
-      if (structure.plan) {
+      if (structure.plan || structure.routes.some((o)=>o.rectIndex===ri)) {
         const obs = structure.routes.filter((o) => o.rectIndex === ri);
         const ans = structure.anchors.filter((a) => a.x >= q[0] && a.x <= q[2] && a.y >= q[1] && a.y <= q[3]);
         plannedBlocks(q, obs, ans, rng, st, area, blocks, realizations, spacePlans,
-          T.key + '|rect|' + ri, structure.plan.program || null); return;
+          T.key + '|rect|' + ri, structure.plan && structure.plan.program || null); return;
       }
       if (ri > 0 || w * h < 60 || Math.min(w, h) < 6) { blocks.push(blk(q, ROOM)); return; }
       LAY[A.style](q, rng, st, A, blocks);
@@ -574,7 +544,8 @@
     const spacePlan = {
       parts: spacePlans,
       parcels: spacePlans.flatMap((p) => p.parcels),
-      localRoutes: spacePlans.flatMap((p) => p.localRoutes),
+      localRoutes: [],
+      remainders: spacePlans.flatMap((p) => p.remainders || []),
       diagnostics: spacePlans.reduce((a,p) => {
         const d=p.diagnostics;a.parcels+=d.parcels;a.support+=d.support;a.localRoutes+=d.localRoutes;
         a.unserved+=d.unserved;if(d.capHit)a.capHit=true;
@@ -586,6 +557,9 @@
       manifestation: structure.plan && structure.plan.manifestation || null,
       programKey: structure.plan && structure.plan.programKey || null,
       structureKey: structure.plan && structure.plan.key,
+      routeNetworks: structure.plans.map((p)=>p.key),
+      routeSpace: realizations.flatMap((r)=>r.rects),
+      buildableSpace: spacePlans.flatMap((p)=>p.buildable),
       obligations: structure.routes, anchors: structure.anchors, realizations, spacePlan, blocks, zones: [], rooms: [], links: [], walls: [] };
     const nb = blocks.map(() => []);
     for (let i = 0; i < blocks.length; i++) for (let j = i + 1; j < blocks.length; j++)
@@ -623,7 +597,7 @@
     // territory whose actual neighbour contacts touch only blocked corners.
     // Reject that realization generically instead of letting the world graph
     // contain an architecturally sealed island.
-    if (!structure.plan && blocks.length===1 && blocks[0].k===BLOCK && !BR.isPocket(area)) {
+    if (!structure.plan && !structure.routes.length && blocks.length===1 && blocks[0].k===BLOCK && !BR.isPocket(area)) {
       const b=blocks[0],Z=I.zones[b.z],access=()=>{
         for(const n of W.adj(T)){
           const pi=BR.pairInfo(W,T,n.U),active=pi.wall==='open'||BR.doorCount(W,T,n.U)>0;

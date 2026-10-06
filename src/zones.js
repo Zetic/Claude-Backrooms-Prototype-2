@@ -796,9 +796,12 @@
   /** Car park: bays painted either side of driving aisles, a column grid, sometimes a ramp. */
   GEN.parking = (Z, q, rng, st, o) => {
     const F = frame(q, rng), U = F.U, V = F.V;
-    if (V < 12 || U < 16) return GEN.open(Z, q, rng, st, o);
-    Z.room([q.slice()], 'car park');
     const bay = 2.5, depth = 5, aisle = 6, mod = 2 * depth + aisle;
+    // One complete module plus its edge margin must fit before bay/column
+    // placement. Forcing a row into a 12-17 m parcel made v00 negative and
+    // emitted geometry outside the buildable floor, into reserved routes.
+    if (V < mod + 2 || U < 16) return GEN.open(Z, q, rng, st, o);
+    Z.room([q.slice()], 'car park');
     const rows = Math.max(1, Math.floor((V - 2) / mod)), v00 = (V - rows * mod) / 2;
     const u0 = 2, u1 = U - 2;
     for (let r = 0; r < rows; r++) {

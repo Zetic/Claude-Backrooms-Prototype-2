@@ -17,18 +17,18 @@
 
   const CIRC = new Set(['corridor', 'hallway', 'aisle', 'hall', 'grand hall', 'office', 'store', 'car park', 'pool room', 'pool hall', 'courtyard', 'atrium', 'gallery']);
 
-  /** DNA circulation blocks that actually cross shared segment s. */
+  /** Physical circulation blocks exposing shared segment s, in either axis. */
   function flowEdges(I, s) {
     const out = [];
     for (const b of I.blocks) {
       const flows = b.flows || (b.flow ? [b.flow] : []);
       for (const F of flows) {
         if (s.o === 'v') {
-          if (F.axis !== 'x' || (b.x0 !== s.c && b.x1 !== s.c)) continue;
+          if (b.x0 !== s.c && b.x1 !== s.c) continue;
           const s0 = Math.max(s.s0, b.y0), s1 = Math.min(s.s1, b.y1);
           if (s1 - s0 > 0.05) out.push({ flow: F, s0, s1 });
         } else {
-          if (F.axis !== 'y' || (b.y0 !== s.c && b.y1 !== s.c)) continue;
+          if (b.y0 !== s.c && b.y1 !== s.c) continue;
           const s0 = Math.max(s.s0, b.x0), s1 = Math.min(s.s1, b.x1);
           if (s1 - s0 > 0.05) out.push({ flow: F, s0, s1 });
         }
@@ -39,19 +39,17 @@
 
   /**
    * A territory seam is not an architectural wall when both interiors expose
-   * the same explicit DNA circulation contract across it. Match contract IDs,
-   * not merely overlapping geometry, so accidental corridor overlap still
-   * receives the normal pair rule.
+   * the same world route space. Match stable network identities independently
+   * of area, DNA, wall policy, or whether the seam cuts along or across a route.
    */
-  function continuationContracts(IA, IB, segs, info) {
-    if (info.wall !== 'thin' || info.fa !== info.fb || !IA.dnaKey || IA.dnaKey !== IB.dnaKey) return [];
+  function continuationContracts(IA, IB, segs) {
     const out = [];
     for (let si = 0; si < segs.length; si++) {
       const A = flowEdges(IA, segs[si]), B = flowEdges(IB, segs[si]);
       for (const a of A) for (const b of B) {
         if (a.flow.key !== b.flow.key) continue;
         const s0 = Math.max(a.s0, b.s0), s1 = Math.min(a.s1, b.s1);
-        if (s1 - s0 < 0.9) continue;
+        if (s1 - s0 < 0.05) continue;
         out.push({ si, s0, s1, flow: a.flow });
       }
     }
@@ -90,27 +88,16 @@
       out.links.push({ a: { key: A.key, room: r[0] }, b: { key: B.key, room: r[1] }, kind, x: p[0], y: p[1], w });
     };
 
-    if (info.wall === 'open') {
-      const seen = new Set();
-      for (const s of segs) for (let t = s.s0 + 0.75; t < s.s1; t += 1.5) {
-        const r = probe(s, t, 0.6);
-        if (!r || seen.has(r[0] + ',' + r[1])) continue;
-        seen.add(r[0] + ',' + r[1]);
-        link(r, s, t, 'opening', 0);
-      }
-      out.semantic = info.fa !== info.fb ? 'transition' : 'open';
-      return out;
-    }
 
     const thick = info.wall === 'thick', d0 = thick ? 1.6 : 0.6;
     const gaps = segs.map(() => []);
-    const continuations = continuationContracts(IA, IB, segs, info);
+    const continuations = continuationContracts(IA, IB, segs);
     for (const c of continuations) {
       const s = segs[c.si], mid = (c.s0 + c.s1) / 2;
-      let r = probe(s, mid, d0), t = mid;
+      let r = probe(s, mid, 0.0001), t = mid;
       if (!r) {
         for (let q = c.s0 + 0.25; q < c.s1 && !r; q += 0.5) {
-          r = probe(s, q, d0); t = q;
+          r = probe(s, q, 0.0001); t = q;
         }
       }
       if (!r) continue;                           // never cut a wall without a physical room-to-room link
@@ -119,6 +106,19 @@
       out.continuations.push({ x: p[0], y: p[1], w, o: s.o, s0: c.s0, s1: c.s1, flow: c.flow.key, kind: c.flow.kind });
       link(r, s, t, 'continuation', w);
     }
+
+    if (info.wall === 'open') {
+      const seen = new Set();
+      for (const s of segs) for (let t = s.s0 + 0.75; t < s.s1; t += 1.5) {
+        const r = probe(s, t, 0.6);
+        if (!r || seen.has(r[0] + ',' + r[1])) continue;
+        seen.add(r[0] + ',' + r[1]);
+        link(r, s, t, 'opening', 0);
+      }
+      out.semantic = out.continuations.length ? 'continuation' : info.fa !== info.fb ? 'transition' : 'open';
+      return out;
+    }
+
 
     const hasContinuation = out.continuations.length > 0;
     const nearContinuation = (si, t) => gaps[si].some((g) => t >= g[0] - 1.5 && t <= g[1] + 1.5);

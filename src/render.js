@@ -150,6 +150,15 @@
       if (H.voids) { ctx.fillStyle = BG; ctx.fill(g.voids); ctx.strokeStyle = g.wall; ctx.lineWidth = px(1.5); ctx.stroke(g.voids); }
     }
 
+    // Physical circulation has one floor treatment across semantic and technical
+    // ownership changes. This is rendered floor, independent of debug overlays.
+    const routeFloor={primary:'#f2e8cf',secondary:'#eee2c5',local:'#e8dbba',service:'#d4cbb2'};
+    for(const T of items.territories){const I=built.get(T.key);if(!I)continue;
+      anchor(T.bbox[0],T.bbox[1]);
+      for(const b of I.blocks)if(b.flow){ctx.fillStyle=routeFloor[b.routeHierarchy];
+        ctx.fillRect(b.x0-T.bbox[0],b.y0-T.bbox[1],b.x1-b.x0,b.y1-b.y0);}
+    }
+
     // ---- interior detail by zoom
     if (detail && opts.walls !== false) {
       const wallW = px(clamp(0.3 * zoom, 0.8, 3)), minorW = wallW * 0.7, hatchW = Math.max(0.1, wallW * 0.4);
@@ -255,7 +264,7 @@
   // ---------------------------------------------------- generation debugger
   function drawGenerationDebug(ctx, W, view, opts) {
     const any = opts.manifestations || opts.programRegions || opts.dnaDebug || opts.candidateRoutes || opts.selectedRoutes || opts.structureNodes ||
-      opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures ||
+      opts.routeSpace || opts.buildableSpace || opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures ||
       opts.spaceParcels || opts.spaceAccess || opts.localCirculation || opts.spaceViolations;
     if (!any) return;
     const { cx, cy, zoom, w, h, dpr } = view, hw=w/2/zoom, hh=h/2/zoom;
@@ -308,23 +317,34 @@
     }
     if(opts.candidateRoutes){
       ctx.setLineDash([4,5]);ctx.lineWidth=1;ctx.strokeStyle='rgba(235,235,235,.38)';
-      for(const P of plans)for(const R of P.candidates)seg(R.axis,R.line,R.s0,R.s1);
+      for(const P of plans)for(const D of P.demands){
+        ctx.beginPath();ctx.arc(X(D.x),Y(D.y),3,0,Math.PI*2);ctx.stroke();
+        if(zoom>=1.5){ctx.fillStyle='rgba(255,255,255,.85)';ctx.font='9px monospace';ctx.fillText(D.role+' '+Math.round(D.distance)+'m',X(D.x)+5,Y(D.y)-4);}
+      }
       ctx.setLineDash([]);
     }
     if(opts.selectedRoutes){
-      const col={major:'rgba(255,70,210,.95)',secondary:'rgba(70,220,255,.95)',service:'rgba(255,170,55,.95)'};
-      const lw={major:3.2,secondary:2.2,service:1.8};
+      const col={primary:'rgba(255,70,210,.95)',secondary:'rgba(70,220,255,.95)',local:'rgba(150,245,120,.95)',service:'rgba(255,170,55,.95)'};
+      const lw={primary:3.2,secondary:2.2,local:1.6,service:1.8};
       for(const P of plans)for(const R of P.routes){
         ctx.strokeStyle=col[R.hierarchy];ctx.lineWidth=lw[R.hierarchy];ctx.setLineDash(R.hierarchy==='service'?[5,3]:[]);
         seg(R.axis,R.line,R.s0,R.s1);
       }
       ctx.setLineDash([]);
     }
+    if(opts.routeSpace){
+      // Draw full canonical footprints without generating a single interior.
+      // No territory clipping or route movement occurs in this stage.
+      ctx.fillStyle='rgba(90,255,155,.32)';ctx.strokeStyle='rgba(90,255,155,.85)';ctx.lineWidth=1;
+      for(const P of plans)for(const R of P.routes){const q=R.rect;
+        ctx.fillRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);rect(q);
+      }
+    }
     if(opts.structureNodes){
       for(const P of plans){
         for(const n of P.nodes){
           ctx.beginPath();ctx.arc(X(n.x),Y(n.y),n.kind==='junction'?4:3,0,Math.PI*2);
-          ctx.fillStyle=n.kind==='junction'?'rgba(255,255,255,.95)':'rgba(255,100,220,.95)';ctx.fill();
+          ctx.fillStyle=n.kind==='junction'?'rgba(255,255,255,.95)':n.kind==='turn'?'rgba(110,220,255,.95)':'rgba(255,100,220,.95)';ctx.fill();
         }
         for(const a of P.anchors){
           const x=X(a.x),y=Y(a.y);ctx.fillStyle='rgba(255,225,80,.95)';ctx.fillRect(x-5,y-5,10,10);
@@ -334,6 +354,12 @@
     }
 
     const terrs=W.territoriesIn(cx-hw-20,cy-hh-20,cx+hw+20,cy+hh+20);
+    if(opts.buildableSpace){
+      ctx.fillStyle='rgba(100,180,255,.12)';ctx.strokeStyle='rgba(100,180,255,.8)';ctx.lineWidth=1;
+      for(const T of terrs){const I=W.interiors.get(T.key);if(!I)continue;
+        for(const q of I.buildableSpace||[]){ctx.fillRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);rect(q);}
+      }
+    }
     if(opts.obligations){
       ctx.setLineDash([3,2]);ctx.lineWidth=2.4;ctx.strokeStyle='rgba(255,235,70,.9)';
       for(const T of terrs){const I=W.interiors.get(T.key);if(!I)continue;for(const o of I.obligations||[])seg(o.axis,o.line,o.s0,o.s1);}
@@ -368,8 +394,8 @@
       for(const T of terrs){
         const I=W.interiors.get(T.key);if(!I||!I.spacePlan)continue;
         if(opts.localCirculation){
-          ctx.setLineDash([6,3]);ctx.lineWidth=2.5;ctx.strokeStyle='rgba(190,110,255,.95)';
-          for(const R of I.spacePlan.localRoutes||[])rect(R.q);
+          ctx.setLineDash([6,3]);ctx.lineWidth=2.5;ctx.strokeStyle='rgba(150,245,120,.95)';
+          for(const R of I.realizations||[])if(R.hierarchy==='local')for(const q of R.rects)rect(q);
           ctx.setLineDash([]);
         }
         for(const p of I.spacePlan.parcels||[]){

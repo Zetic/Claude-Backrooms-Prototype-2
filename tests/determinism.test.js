@@ -210,7 +210,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   };
   let disconnectedPlans=0, major=0, secondary=0, service=0, plannedAnchors=0;
   for (const P of plans) {
-    major += P.routes.filter((r)=>r.hierarchy==='major').length;
+    major += P.routes.filter((r)=>r.hierarchy==='primary').length;
     secondary += P.routes.filter((r)=>r.hierarchy==='secondary').length;
     service += P.routes.filter((r)=>r.hierarchy==='service').length;
     plannedAnchors += P.anchors.length;
@@ -220,7 +220,8 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
     if(seenR.size!==P.routes.length)disconnectedPlans++;
   }
   check('district route plans are connected', plans.length >= 2 && disconnectedPlans === 0, `${plans.length} plans, ${disconnectedPlans} disconnected`);
-  check('plans contain major, secondary and service circulation', major>0&&secondary>0&&service>0, `major ${major}, secondary ${secondary}, service ${service}`);
+  const serviceServed=plans.every((P)=>P.program.regions.filter((r)=>r.role==='service').every((r)=>BR.nearestRoute(P.routes,r.x,r.y).distance<=P.dna.corridorWidth));
+  check('primary/secondary networks serve structural service regions', major>0&&secondary>0&&serviceServed, `primary ${major}, secondary ${secondary}, service ${service}`);
   check('special-space anchors are attached to structure topology', plannedAnchors >= plans.length, `${plannedAnchors} anchors`);
 
   let obligations=0, exact=0, adapted=0, failed=0, badFlows=0, anchorObs=0, anchorAttached=0;
@@ -239,7 +240,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   const realized=exact+adapted;
   check('territories realize district route obligations', obligations >= 200 && realized / obligations > 0.85 && badFlows===0,
     `${realized}/${obligations} realized; exact ${exact}, adapted ${adapted}, failed ${failed}`);
-  check('route adaptation is exercised and explicit', adapted > 0 && failed >= 0, `${adapted} adapted, ${failed} failed`);
+  check('world route space is clipped without territory adaptation', exact===obligations && adapted===0 && failed===0, `${adapted} adapted, ${failed} failed`);
   check('planned anchors become local special spaces', anchorObs > 0 && anchorAttached / anchorObs > 0.8, `${anchorAttached}/${anchorObs} attached`);
 
   // ------------------------------------------------ local space planning
@@ -267,7 +268,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       }
     }
   }
-  check('local space planner subdivides structured floor', plannedTerr>100&&spaceParcels>1000&&localHalls>100,
+  check('local parcels consume reserved routes without inventing halls', plannedTerr>100&&spaceParcels>1000&&localHalls===0,
     `${plannedTerr} territories, ${spaceParcels} parcels, ${localHalls} local halls`);
   check('local planning respects hard complexity caps', capViolations===0, `${capViolations} cap violations`);
   check('occupiable parcels satisfy geometry/access constraints', badParcel===0, `${badParcel} invalid occupiable parcels; ${supportParcels} support parcels`);
@@ -353,7 +354,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       if(!BR.isPocket(fa)&&!BR.isPocket(fb)&&formerBands.has(pairName)){
         transitions++;
         const b=W.boundary(T,n.U);
-        if(BR.rule(fa,fb)==='band'||info.band||info.service||info.wall!=='thick'||b.semantic!=='transition'||b.doors.some((d)=>d.kind==='service'))
+        if(BR.rule(fa,fb)==='band'||info.band||info.service||info.wall!=='thick'||!['transition','continuation'].includes(b.semantic)||b.doors.some((d)=>d.kind==='service'))
           badTransitions.push(k);
       }
     }
