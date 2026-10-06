@@ -62,7 +62,7 @@ const base = snapshot(new BR.World(SEED), ...R);
   check('visit order does not matter', snapshot(W, ...R) === base);
 }
 {
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
   check('cache eviction does not matter', snapshot(W, ...R) === base);
 }
 check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], R[2], R[3], true) === base);
@@ -77,11 +77,46 @@ check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], 
 {
   const F = [1e6 - 120, -1e6 - 90, 1e6 + 120, -1e6 + 90];
   const a = snapshot(new BR.World(SEED), ...F);
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
   W.collect(0, 0, 100, 100, Infinity, { interiors: true });
   check('far from the origin (1e6 m) still deterministic', snapshot(W, ...F) === a);
 }
 check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base);
+
+// ---------------------------------------------------- architecture DNA
+
+{
+  const W = new BR.World(SEED);
+  const terrs = W.territoriesIn(-1600, -1600, 1600, 1600);
+  const groups = new Map();
+  for (const T of terrs) {
+    const a = W.final(T);
+    if (!T.district || !BR.AREAS[a] || BR.AREAS[a].role !== 'district') continue;
+    const k = a + ':' + T.district;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(T);
+  }
+  const same = [...groups.values()].find((g) => g.length >= 3);
+  let shared = false, stable = false;
+  if (same) {
+    const ds = same.slice(0, 3).map((T) => W.architecture(T));
+    shared = ds.every((d) => d.key === ds[0].key && JSON.stringify(d) === JSON.stringify(ds[0]));
+    const W2 = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 1 } });
+    stable = JSON.stringify(W2.architecture(W2.terr(same[0].key))) === JSON.stringify(ds[0]);
+  }
+  check('district architecture DNA persists across territories', !!same && shared);
+  check('architecture DNA survives cache eviction', !!same && stable);
+
+  const distinct = [];
+  for (const g of groups.values()) {
+    if (!g.length) continue;
+    const d = W.architecture(g[0]);
+    if (!distinct.some((x) => x.key === d.key)) distinct.push(d);
+    if (distinct.length >= 6) break;
+  }
+  const signatures = new Set(distinct.map((d) => [d.majorAxis, d.corridorWidth, d.module, d.spineSpacing, d.spinePhase, d.crossSpacing, d.crossPhase].join(':')));
+  check('different districts can have different architecture DNA', distinct.length >= 2 && signatures.size >= 2, `${distinct.length} districts, ${signatures.size} DNA signatures`);
+}
 
 // ------------------------------------------------------------ tiling
 {
