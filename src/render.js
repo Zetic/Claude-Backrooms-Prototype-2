@@ -51,11 +51,9 @@
 
   function planGfx(W, T) {
     if (T._gfx) return T._gfx;
-    const ax = T.bbox[0], ay = T.bbox[1], rgb = W.color(T), cut = BR.carveBands(W, T);
-    T._gfx = {
-      ax, ay, all: rectsPath(T.rects, ax, ay), strips: rectsPath(cut.strips.map((s) => s.q), ax, ay), hasStrips: cut.strips.length > 0,
-      fill: rgbToCss(rgb), line: rgbToCss(scaleRgb(rgb, 0.84)), maint: rgbToCss(BR.hexToRgb(BR.AREAS.maintenance.color))
-    };
+    const ax = T.bbox[0], ay = T.bbox[1], rgb = W.color(T);
+    T._gfx = { ax, ay, all: rectsPath(T.rects, ax, ay),
+      fill: rgbToCss(rgb), line: rgbToCss(scaleRgb(rgb, 0.84)) };
     return T._gfx;
   }
 
@@ -86,7 +84,7 @@
       if (Pl[k + 2] === 1) { const t = sz / 3; pillars.rect(x - sz / 2, y - t / 2, sz, t); pillars.rect(x - t / 2, y - sz / 2, t, sz); }
       else pillars.rect(x - sz / 2, y - sz / 2, sz, sz);
     }
-    const wallRgb = scaleRgb(rgb, 0.72), maintRgb = BR.hexToRgb(BR.AREAS.maintenance.color);
+    const wallRgb = scaleRgb(rgb, 0.72), serviceRgb = scaleRgb(rgb, 0.90);
     I._gfx = {
       ax, ay,
       floor: rectsPath(floor, ax, ay), svc: rectsPath(svc, ax, ay), hasSvc: svc.length > 0,
@@ -94,7 +92,7 @@
       masses: flatPath(I.masses, ax, ay), voids: flatPath(I.voids, ax, ay), pools: flatPath(I.pools, ax, ay), props: flatPath(I.props, ax, ay),
       rounds, arcs, pillars,
       has: { masses: I.masses.length > 0, voids: I.voids.length > 0, pools: I.pools.length > 0, props: I.props.length > 0, rounds: R.length > 0, pillars: Pl.length > 0, minor: I.minor.length > 0, hatch: I.hatch.length > 0 },
-      fill: rgbToCss(rgb), maint: rgbToCss(maintRgb),
+      fill: rgbToCss(rgb), service: rgbToCss(serviceRgb),
       wall: rgbToCss(wallRgb), minorC: rgbToCss(mixRgb(wallRgb, rgb, 0.3)), prop: rgbToCss(scaleRgb(rgb, 0.86)),
       water: rgbToCss(mixRgb(WATER, rgb, 0.12))
     };
@@ -137,7 +135,6 @@
       const g = planGfx(W, T);
       anchor(g.ax, g.ay);
       ctx.fillStyle = g.fill; ctx.fill(g.all);
-      if (g.hasStrips) { ctx.fillStyle = g.maint; ctx.fill(g.strips); }
     }
     for (const T of items.territories) {
       const I = built.get(T.key);
@@ -145,7 +142,7 @@
       const g = interiorGfx(W, T, I), H = g.has;
       anchor(g.ax, g.ay);
       ctx.fillStyle = g.fill; ctx.fill(g.floor);
-      if (g.hasSvc) { ctx.fillStyle = g.maint; ctx.fill(g.svc); }
+      if (g.hasSvc) { ctx.fillStyle = g.service; ctx.fill(g.svc); }
       if (H.pools) { ctx.fillStyle = g.water; ctx.fill(g.pools); }
       ctx.fillStyle = g.wall;
       if (H.masses) ctx.fill(g.masses);
