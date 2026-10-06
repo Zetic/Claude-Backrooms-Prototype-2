@@ -889,6 +889,10 @@
   /** Build a zone of the given type (or landmark) over block q. */
   function fillZone(type, q, rng, st, o) {
     o = o || {};
+    if (o.space && BR.spaceTypeCompatible) {
+      const w=q[2]-q[0],h=q[3]-q[1],U=Math.max(w,h),V=Math.min(w,h);
+      if (!BR.spaceTypeCompatible(o.space.area, type, o.space, U, V)) type='open';
+    }
     if (LANDMARK_GEN[type]) {
       const [g, opt] = LANDMARK_GEN[type];
       const Z = new Zone(type, q);
