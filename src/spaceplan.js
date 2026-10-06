@@ -120,7 +120,9 @@
     if(dep<p.minDepth-1e-9)violations.push('depth-small');
     if(dep>p.maxDepth+1e-9)violations.push('depth-large');
     if(aspect>p.maxAspect+1e-9)violations.push('aspect');
-    return {frontSide:F.front,frontage,depth:dep,aspect,servedBy,access:accessKind||'circulation',
+    const access=accessKind||'circulation';
+    if(access==='unserved')violations.push('unserved');
+    return {frontSide:F.front,frontage,depth:dep,aspect,servedBy,access,
       plannerDepth:depthLevel,role:violations.length?'support':'occupiable',violations};
   }
 
