@@ -112,9 +112,9 @@
     'hotel|poolrooms': R(0, 1, 40, 1, 1, 0.6, 0),
     // Former maintenance-band pairs now meet directly through a strong
     // transition wall with sparse localized access.
-    'offices|poolrooms': R(0, 0.9, 52, 1, 1, 0.55, 0.05),
-    'parking|poolrooms': R(0, 0.85, 46, 1, 1, 0.45, 0.2),
-    'hotel|parking': R(0, 0.9, 55, 1, 1, 0.6, 0.05)
+    'offices|poolrooms': R(0, 1, 52, 1, 1, 0.55, 0.05),
+    'parking|poolrooms': R(0, 1, 46, 1, 1, 0.45, 0.2),
+    'hotel|parking': R(0, 1, 55, 1, 1, 0.6, 0.05)
   };
   const DEFAULT_RULE = R(0, 0, 30, 1, 1, 0.4, 0.1);
   function rule(a, b) {
