@@ -12,7 +12,7 @@
   'use strict';
   const BR = root.BR;
 
-  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000, structures: 2000 };
+  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000, programs: 2000, structures: 2000 };
   const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
 
   class World {
@@ -24,8 +24,9 @@
       this.boundaries = new Map();
       this.pairs = new Map();
       this.dna = new Map();
+      this.programs = new Map();
       this.structures = new Map();
-      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
+      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, programsBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
     }
     evict(map, n) {
       const it = map.keys();
@@ -50,6 +51,25 @@
     adj(T) { return BR.adjacency(this, T); }
     final(T) { return BR.finalArea(this, T); }
     architecture(T) { return BR.architectureDNA(this, T, this.final(T)); }
+    manifestation(T) {
+      if (!T || !T.district) return null;
+      const ij=T.district.split(',');
+      return BR.manifestationSeed(this.seed,+ij[0],+ij[1]);
+    }
+    programBy(area, district) {
+      if (!area || !district || !BR.STRUCTURE_AREAS.has(area)) return null;
+      const k=area+':'+district;
+      let P=this.programs.get(k);
+      if(P){this.programs.delete(k);this.programs.set(k,P);return P;}
+      P=BR.buildManifestationProgram(this,area,district);
+      if(P){
+        this.stats.programsBuilt++;
+        this.programs.set(k,P);
+        if(this.programs.size>this.limits.programs)this.evict(this.programs,Math.max(1,this.limits.programs>>2));
+      }
+      return P;
+    }
+    program(T) { return this.programBy(this.final(T),T.district); }
     structureBy(area, district) {
       if (!area || !district || !BR.STRUCTURE_AREAS.has(area)) return null;
       const k = area + ':' + district;
@@ -166,7 +186,11 @@
     inspect(x, y) {
       const T = BR.territoryAt(this, x, y);
       if (!T) return null;
-      const r = { territory: T, area: this.final(T), base: T.base, district: T.district };
+      const r = { territory: T, area: this.final(T), base: T.base, district: T.district,
+        manifestationId: T.manifestation || T.district };
+      r.manifestation = this.manifestation(T);
+      r.program = this.program(T);
+      r.programRole = r.program ? BR.programRoleAt(r.program,x,y) : null;
       r.dna = this.architecture(T);
       r.structure = this.structure(T);
       const I = this.interiors.get(T.key);
