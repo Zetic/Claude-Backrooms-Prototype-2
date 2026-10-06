@@ -141,6 +141,7 @@
   }
 
   function plannedBlocks(q, obligations, anchors, rng, st, area, out, realizations, spacePlans, planKey) {
+    const outStart=out.length;
     const realized=[];
     for(const o of obligations){
       const r=realizeObligation(q,o,st.dna);
@@ -175,7 +176,8 @@
     // planning, so they cannot erase required circulation.
     for(const a of anchors){
       let best=null,bd=Infinity;
-      for(const b of out){
+      for(let bi=outStart;bi<out.length;bi++){
+        const b=out[bi];
         if(b.k===HALL||b.k===SERVICE||!b.space||b.anchor)continue;
         const cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2,d=(cx-a.x)**2+(cy-a.y)**2;
         if(d<bd&&Math.min(b.x1-b.x0,b.y1-b.y0)>=4&&(b.x1-b.x0)*(b.y1-b.y0)>=24){bd=d;best=b;}
@@ -542,14 +544,13 @@
     const rng = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.INT));
     const area = W.final(T), A = BR.AREAS[area], dna = BR.architectureDNA(W, T, area);
     const st = makeStyle(A, rng, dna);
-    const { rects, strips } = BR.carveBands(W, T);
+    const rects = T.rects.map((r) => r.slice());
     const structure = BR.territoryStructure(W, T, rects);
     const blocks = [], realizations = [], spacePlans = [];
-    for (const s of strips) blocks.push(blk(s.q, SERVICE));
     // landmark: one huge block
     const r0 = rects[0], [w0, h0] = dims(r0);
     let landmark = null;
-    if (!structure.plan && A.landmarks && T.rects.length === 1 && !strips.length && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
+    if (!structure.plan && A.landmarks && T.rects.length === 1 && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
       new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK)).f() < A.landmarkP * dna.landmarkBias) {
       landmark = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK + 1)).weighted(A.landmarks);
       if (landmark === 'longGallery' && Math.max(w0, h0) < 2.2 * Math.min(w0, h0)) landmark = 'grandHall';
