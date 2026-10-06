@@ -301,48 +301,6 @@
     return d;
   }
 
-  /** Maintenance band strips T must carve: [{ ri, side, w }] (sides 0 top 1 bottom 2 left 3 right). */
-  function bands(W, T) {
-    if (T._bands) return T._bands;
-    const out = [];
-    for (const n of adjacency(W, T)) {
-      const info = pairInfo(W, T, n.U);
-      if (!info.band || info.band.owner !== T.key) continue;
-      for (const s of n.segs) {
-        if (info.band.o && s.o !== info.band.o) continue;
-        if (!out.some((b) => b.ri === s.ri && b.side === s.side)) out.push({ ri: s.ri, side: s.side, w: info.band.w });
-      }
-    }
-    out.sort((p, q) => p.ri - q.ri || p.side - q.side);
-    T._bands = out;
-    return out;
-  }
-
-  /**
-   * Apply T's band list to its rects: { rects: remaining floor rect per T rect,
-   * strips: [{ q, ri }] }. Top/bottom strips span the full side; left/right
-   * strips fit between them, so bands meeting at a corner join up.
-   */
-  function carveBands(W, T) {
-    if (T._carve) return T._carve;
-    const list = bands(W, T), rects = [], strips = [];
-    T.rects.forEach((r0, ri) => {
-      const r = r0.slice();
-      for (const b of list) {
-        if (b.ri !== ri) continue;
-        const depth = b.side < 2 ? r[3] - r[1] : r[2] - r[0];
-        if (depth < b.w + 8) continue;
-        if (b.side === 0) { strips.push({ q: [r[0], r[1], r[2], r[1] + b.w], ri }); r[1] += b.w; }
-        else if (b.side === 1) { strips.push({ q: [r[0], r[3] - b.w, r[2], r[3]], ri }); r[3] -= b.w; }
-        else if (b.side === 2) { strips.push({ q: [r[0], r[1], r[0] + b.w, r[3]], ri }); r[0] += b.w; }
-        else { strips.push({ q: [r[2] - b.w, r[1], r[2], r[3]], ri }); r[2] -= b.w; }
-      }
-      rects.push(r);
-    });
-    T._carve = { rects, strips };
-    return T._carve;
-  }
-
   /** Territory containing world point (x,y), or null. */
   function territoryAt(W, x, y) {
     const i0 = Math.floor(x / CFG.SC), j0 = Math.floor(y / CFG.SC);
