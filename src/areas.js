@@ -49,6 +49,7 @@
       landmarks: { atrium: 1 }, landmarkP: 0.02,
       architecture: { corridor3:0.32, module:[4,7], spine:[30,48], cross:[36,58], crossChance:[0.38,0.68] },
       manifestation: {
+        weight:3,
         forms:{compact:1.1,elongated:1.2,branched:2.4,fragmented:1.25,interwoven:1.45,regional:0.22},
         scales:{small:1.4,medium:3.2,large:0.8,regional:0.08}, scale:0.95, intrusion:0.22
       },
@@ -63,6 +64,7 @@
       landmarks: { atrium: 1 }, landmarkP: 0.03,
       architecture: { corridor3:0.22, module:[4,6], spine:[26,38], cross:[42,64], crossChance:[0.28,0.52] },
       manifestation: {
+        weight:1.1,
         forms:{compact:1.15,elongated:1.8,branched:2.1,fragmented:1.05,interwoven:1.35,regional:0.16},
         scales:{small:1.5,medium:3.4,large:0.7,regional:0.06}, scale:0.92, intrusion:0.2
       },
@@ -79,6 +81,7 @@
       landmarks: { poolHall: 1 }, landmarkP: 0.05,
       architecture: { corridor3:0.58, module:[5,9], spine:[34,58], cross:[46,74], crossChance:[0.25,0.5] },
       manifestation: {
+        weight:1.4,
         forms:{compact:0.7,elongated:0.8,branched:1.35,fragmented:1.15,interwoven:1.65,regional:0.75},
         scales:{small:0.7,medium:2.1,large:1.6,regional:0.55}, scale:1.05, intrusion:0.28
       },
@@ -94,6 +97,7 @@
       service: { room: 1.5, stairs: 0.8 },
       architecture: { corridor3:0.72, module:[6,10], spine:[38,64], cross:[48,78], crossChance:[0.22,0.48] },
       manifestation: {
+        weight:1.4,
         forms:{compact:0.75,elongated:1.5,branched:1.1,fragmented:0.75,interwoven:0.7,regional:1.0},
         scales:{small:0.45,medium:1.65,large:2.0,regional:0.8}, scale:1.08, intrusion:0.1
       },
@@ -116,8 +120,10 @@
     }
   };
   const ORDER = Object.keys(AREAS);
-  const POCKETS = ['home', 'maintenance'];
-  const MANIFEST_TYPES = { offices: 3, parking: 1.4, poolrooms: 1.4, hotel: 1.1 };
+  const BASE_AREA = ORDER.find((k)=>AREAS[k].role==='base') || ORDER[0];
+  const POCKETS = ORDER.filter((k)=>AREAS[k].role==='pocket');
+  const MANIFEST_TYPES = {};
+  for(const k of ORDER) if(AREAS[k].role==='district') MANIFEST_TYPES[k]=(AREAS[k].manifestation&&AREAS[k].manifestation.weight)||1;
 
   // ----------------------------------------------------------------- rules
   /**
@@ -151,7 +157,7 @@
     const k = a < b ? a + '|' + b : b + '|' + a;
     return RULES[k] || DEFAULT_RULE;
   }
-  function isPocket(area) { return area === 'home' || area === 'maintenance'; }
+  function isPocket(area) { return !!AREAS[area] && AREAS[area].role === 'pocket'; }
 
   // ------------------------------------------------ manifestation field
   // Compatibility names are retained because structure/layout APIs already
@@ -169,7 +175,7 @@
   const DNA_REGION = 760;
 
   function architectureRegion(T, area) {
-    const A = AREAS[area] || AREAS.backrooms;
+    const A = AREAS[area] || AREAS[BASE_AREA];
     if (T.district && A.role === 'district') {
       const p = T.district.split(',');
       return { key: 'district:' + area + ':' + T.district, a: +p[0], b: +p[1], district: true };
@@ -179,7 +185,7 @@
   }
 
   function architectureDNA(W, T, area) {
-    area = area || T.base || 'backrooms';
+    area = area || T.base || BASE_AREA;
     const reg = architectureRegion(T, area);
     if (W.dna && W.dna.has(reg.key)) {
       const hit = W.dna.get(reg.key);
@@ -195,7 +201,7 @@
       majorAxis = d.axis || (rng.f() < 0.5 ? 'x' : 'y');
     } else majorAxis = rng.f() < 0.5 ? 'x' : 'y';
 
-    const A = AREAS[area] || AREAS.backrooms, AC=A.architecture||AREAS.backrooms.architecture;
+    const A = AREAS[area] || AREAS[BASE_AREA], AC=A.architecture||AREAS[BASE_AREA].architecture;
     const corridorWidth = rng.f() < (1-(AC.corridor3||0.32)) ? 2 : 3;
     const module = rng.int(AC.module[0], AC.module[1]);
     const spineSpacing = rng.int(AC.spine[0], AC.spine[1]);
@@ -243,6 +249,6 @@
     return BR.scaleRgb(BR.hexToRgb(AREAS[area].color), 0.98 + 0.04 * jit);
   }
 
-  Object.assign(BR, { AREAS, AREA_ORDER: ORDER, POCKETS, MANIFEST_TYPES, RULES, rule, isPocket,
+  Object.assign(BR, { AREAS, AREA_ORDER: ORDER, BASE_AREA, POCKETS, MANIFEST_TYPES, RULES, rule, isPocket,
     areaAt, areaColor, districtSeed, architectureDNA, ARCHITECTURE_DNA_REGION: DNA_REGION, AREA_CFG: CFG });
 })(typeof window !== 'undefined' ? window : globalThis);
