@@ -625,11 +625,15 @@
     // contain an architecturally sealed island.
     if (!structure.plan && blocks.length===1 && blocks[0].k===BLOCK && !BR.isPocket(area)) {
       const b=blocks[0],Z=I.zones[b.z],access=()=>{
-        for(const n of W.adj(T))for(const sg of n.segs){
+        for(const n of W.adj(T)){
+          const pi=BR.pairInfo(W,T,n.U),active=pi.wall==='open'||BR.doorCount(W,T,n.U)>0;
+          if(!active)continue;
+          for(const sg of n.segs){
           const sign=sg.side===1||sg.side===3?-1:1;
           for(const d of [0.6,1.4,2.2])for(let t=sg.s0+0.5;t<=sg.s1-0.5+1e-9;t+=0.75){
             const x=sg.o==='h'?t:sg.c+sign*d,y=sg.o==='h'?sg.c+sign*d:t;
             if(Z.doorRoomAt(x,y)>=0)return true;
+          }
           }
         }
         return false;
