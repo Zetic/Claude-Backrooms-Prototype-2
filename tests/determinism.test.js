@@ -35,7 +35,7 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
     const it = W.interior(T);
     P[T.key] = [T.rects, W.final(T), T.base, T.district].map(String).join(';');
     I[T.key] = JSON.stringify({
-      blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type]),
+      blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type, b.flow ? b.flow.key : null]),
       rooms: it.rooms.map((r) => r.kind + ':' + r.rects.map((q) => q.map(r6).join(',')).join('/')),
       links: it.links.map((l) => [l.a, l.b, r6(l.x), r6(l.y), r6(l.w), l.kind]),
       geo: ['walls', 'minor', 'hatch', 'masses', 'voids', 'pools', 'props', 'rounds', 'pillars'].map((k) => it[k].map(r6))
@@ -141,6 +141,66 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   }
   check('office/hotel corridors inherit DNA width', primary >= 100 && badWidth === 0, `${primary} corridors, ${badWidth} wrong width`);
   check('office/hotel corridors use shared DNA lattice', primary >= 100 && aligned / primary > 0.3, `${aligned}/${primary} aligned`);
+
+  // Matching DNA circulation contracts should cross technical territory seams
+  // as one continuous corridor, not as a corridor-door-corridor sequence.
+  const edgeFlows = (I, s) => {
+    const out = [];
+    for (const b of I.blocks) {
+      if (!b.flow) continue;
+      if (s.o === 'v') {
+        if (b.flow.axis !== 'x' || (b.x0 !== s.c && b.x1 !== s.c)) continue;
+        const a = Math.max(s.s0, b.y0), z = Math.min(s.s1, b.y1);
+        if (z - a >= 0.9) out.push([b.flow.key, a, z]);
+      } else {
+        if (b.flow.axis !== 'y' || (b.y0 !== s.c && b.y1 !== s.c)) continue;
+        const a = Math.max(s.s0, b.x0), z = Math.min(s.s1, b.x1);
+        if (z - a >= 0.9) out.push([b.flow.key, a, z]);
+      }
+    }
+    return out;
+  };
+  const wallHits = (B, c) => {
+    for (let k = 0; k < B.walls.length; k += 4) {
+      const x0 = B.walls[k], y0 = B.walls[k + 1], x1 = B.walls[k + 2], y1 = B.walls[k + 3];
+      if (c.o === 'v' && x0 === x1 && x0 === c.x && Math.min(y1, c.s1) - Math.max(y0, c.s0) > 0.05) return true;
+      if (c.o === 'h' && y0 === y1 && y0 === c.y && Math.min(x1, c.s1) - Math.max(x0, c.s0) > 0.05) return true;
+    }
+    return false;
+  };
+
+  let expectedCont = 0, actualCont = 0, continuationWalls = 0, continuationDoors = 0, continuationLinks = 0;
+  const seenCont = new Set(), terrKeys = new Set(terrs.map((T) => T.key));
+  outerCont: for (const T of terrs) {
+    const area = W.final(T);
+    if (area !== 'offices' && area !== 'hotel') continue;
+    const IA = W.interior(T);
+    for (const n of W.adj(T)) {
+      const U = n.U, pk = BR.pairKey(T, U);
+      if (seenCont.has(pk) || !terrKeys.has(U.key) || W.final(U) !== area) continue;
+      seenCont.add(pk);
+      const IB = W.interior(U);
+      if (IA.dnaKey !== IB.dnaKey || BR.pairInfo(W, T, U).wall !== 'thin') continue;
+      let matches = 0;
+      for (const s of n.segs) {
+        const A = edgeFlows(IA, s), BB = edgeFlows(IB, s);
+        for (const a of A) for (const b of BB)
+          if (a[0] === b[0] && Math.min(a[2], b[2]) - Math.max(a[1], b[1]) >= 0.9) matches++;
+      }
+      if (!matches) continue;
+      const B = W.boundary(T, U);
+      expectedCont += matches;
+      actualCont += B.continuations.length;
+      continuationDoors += B.doors.length;
+      continuationLinks += B.links.filter((L) => L.kind === 'continuation').length;
+      for (const c of B.continuations) if (wallHits(B, c)) continuationWalls++;
+      if (expectedCont >= 80) break outerCont;
+    }
+  }
+  check('matching DNA corridors continue through territory seams', expectedCont >= 40 && actualCont === expectedCont, `${actualCont}/${expectedCont} continuations`);
+  check('continuation openings contain no seam wall', continuationWalls === 0, `${continuationWalls} wall overlaps`);
+  check('continuation seams suppress redundant normal doors', continuationDoors === 0, `${continuationDoors} doors`);
+  check('continuations add room-graph links', continuationLinks === actualCont, `${continuationLinks}/${actualCont} links`);
 }
 
 // ------------------------------------------------------------ tiling
