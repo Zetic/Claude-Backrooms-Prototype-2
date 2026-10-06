@@ -60,6 +60,10 @@ program of a complex.
 
 ### 2. Semantic areas and spatial manifestations (areas.js, manifestation.js)
 
+The currently configured semantic roles are shown below. These names are
+configuration, not generator branches: manifestation and structure
+participation are derived from each area's `role`.
+
 The currently configured semantic roles are:
 
 - **Backrooms** — dominant substrate when no manifestation claims a point.
@@ -375,9 +379,11 @@ All checks pass for seeds 31337, 7, 12345, 99 and 4242.
 
 ## Limitations / next steps
 
-- The current configuration deliberately makes Backrooms the dominant
-  substrate. The manifestation mechanism itself is generic, but changing which
-  identity is substrate would still require an area-field configuration change.
+- The current configuration deliberately assigns Backrooms the `base` role.
+  The manifestation engine itself is role-driven: the configured `base` area
+  becomes substrate, `district` areas automatically participate in
+  manifestations/structure planning, and `pocket` areas remain contained
+  replacements. No manifestation/structure code enumerates semantic names.
 - Manifestation footprints are composed from axis-aligned lobe primitives and
   are sampled at territory centres; final area boundaries therefore remain
   rectilinear at plan/detail zoom.
