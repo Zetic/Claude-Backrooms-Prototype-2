@@ -1,9 +1,9 @@
 /*
  * spaceplan.js - bounded local architectural planning.
  *
- * District structure decides which major routes exist. This layer decides how
- * the remaining floor mass is served by circulation and divided into usable
- * architectural parcels before semantic zone generators are chosen.
+ * The world network owns all circulation. This layer subtracts its exact
+ * physical footprint, then derives usable frontage/depth parcels. Deep or
+ * unserved residuals remain support floor; it never inserts a local hallway.
  *
  * It operates only on rectangles/segments and bounded small graphs. There is
  * no raster field, flood fill, unbounded search, or regenerate-until-good loop.
@@ -15,7 +15,7 @@
   const BASE = {
     minDepth: 3.5, maxDepth: 12, minFrontage: 3.5, targetFrontage: 8,
     maxFrontage: 14, maxAspect: 3.5, localWidth: 2,
-    maxParcels: 64, maxLocalRoutes: 4, maxServeDepth: 4
+    maxParcels: 64
   };
   const POLICY = {
     hotel:   { minDepth: 4.5, maxDepth: 9,  minFrontage: 3.2, targetFrontage: 5,  maxFrontage: 8.5, maxAspect: 2.5, localWidth: 2 },
@@ -26,7 +26,7 @@
     home:    { minDepth: 4,   maxDepth: 10, minFrontage: 3.5, targetFrontage: 7,  maxFrontage: 12,  maxAspect: 3,   localWidth: 1.5 },
     maintenance:{ minDepth: 3,maxDepth: 10, minFrontage: 3,   targetFrontage: 7,  maxFrontage: 14,  maxAspect: 4,   localWidth: 2 }
   };
-  const PRI = { major: 0, secondary: 1, service: 2, local: 3 };
+  const PRI = BR.STRUCTURE_PRIORITY;
 
   const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
   const qArea = (q) => Math.max(0,q[2]-q[0]) * Math.max(0,q[3]-q[1]);
@@ -147,89 +147,55 @@
     }
   }
 
-  function localRoute(q, id, hierarchy, role) {
-    return {id,q:q.slice(),kind:'route',hierarchy:hierarchy||'local',role:role||'catchment',
-      realization:'local',flow:null,flows:[],routeId:id,local:true};
-  }
-
-  function serve(q, side, servedBy, p, depthLevel, localRoutes, parcels, diag, key) {
-    if(qArea(q)<0.1)return;
-    const F=frame(q,side),U=F.U,V=F.V,cw=p.localWidth;
-    const deep=V>p.maxDepth*1.08;
-    const geometry=V>p.minDepth+cw&&U>=2*p.minFrontage+cw;
-    const canAdd=deep&&geometry&&depthLevel<p.maxServeDepth&&localRoutes.length<p.maxLocalRoutes;
-    if(!canAdd){
-      if(deep&&(depthLevel>=p.maxServeDepth||localRoutes.length>=p.maxLocalRoutes))diag.capHit=true;
-      parcelize(q,side,servedBy,p,depthLevel,'circulation',parcels,diag);return;
-    }
-
-    // A deep catchment receives a perpendicular branch starting on the
-    // circulation edge that serves it. This makes local circulation a tree:
-    // every derived hall physically touches its parent instead of creating
-    // disconnected parallel hallways behind rows of rooms.
-    let u=Math.round(U/2);
-    u=clamp(u,p.minFrontage+cw/2,U-p.minFrontage-cw/2);
-    const u0=u-cw/2,u1=u+cw/2,cq=F.rect(u0,0,u1,V),id=key+'|local|'+localRoutes.length;
-    localRoutes.push(localRoute(cq,id,'local','catchment'));diag.localRoutes++;
-
-    const a=F.rect(0,0,u0,V),b=F.rect(u1,0,U,V);
-    // Canonical u runs left-to-right for top/bottom access and top-to-bottom
-    // for left/right access. Use the side that actually touches the branch.
-    const sideA=(side==='top'||side==='bottom')?'right':'bottom';
-    const sideB=(side==='top'||side==='bottom')?'left':'top';
-    if(qArea(a)>0.1)serve(a,sideA,id,p,depthLevel+1,localRoutes,parcels,diag,key);
-    if(qArea(b)>0.1)serve(b,sideB,id,p,depthLevel+1,localRoutes,parcels,diag,key);
-  }
-
-  function fallbackServe(q,p,dna,key,localRoutes,parcels,diag) {
-    const w=q[2]-q[0],h=q[3]-q[1],cw=p.localWidth;
-    if(localRoutes.length>=p.maxLocalRoutes){
-      diag.capHit=true;diag.unserved++;
-      parcelize(q,w>=h?'top':'left',null,p,0,'unserved',parcels,diag);return;
-    }
-    if(Math.min(w,h)<cw+p.minDepth*1.4||qArea(q)<p.minFrontage*p.minDepth*2){
-      const side=w>=h?'top':'left';parcelize(q,side,null,p,0,'unserved',parcels,diag);diag.unserved++;return;
-    }
-    const axis=(dna&&dna.majorAxis)|| (w>=h?'x':'y');
-    if(axis==='x'){
-      const line=clamp((q[1]+q[3])/2,q[1]+cw/2,q[3]-cw/2), cq=[q[0],line-cw/2,q[2],line+cw/2], id=key+'|local-root';
-      localRoutes.push(localRoute(cq,id,'local','root'));diag.localRoutes++;diag.rootLocal++;
-      const a=[q[0],q[1],q[2],cq[1]],b=[q[0],cq[3],q[2],q[3]];
-      if(qArea(a)>0.1)serve(a,'bottom',id,p,0,localRoutes,parcels,diag,key);
-      if(qArea(b)>0.1)serve(b,'top',id,p,0,localRoutes,parcels,diag,key);
-    }else{
-      const line=clamp((q[0]+q[2])/2,q[0]+cw/2,q[2]-cw/2), cq=[line-cw/2,q[1],line+cw/2,q[3]], id=key+'|local-root';
-      localRoutes.push(localRoute(cq,id,'local','root'));diag.localRoutes++;diag.rootLocal++;
-      const a=[q[0],q[1],cq[0],q[3]],b=[cq[2],q[1],q[2],q[3]];
-      if(qArea(a)>0.1)serve(a,'right',id,p,0,localRoutes,parcels,diag,key);
-      if(qArea(b)>0.1)serve(b,'left',id,p,0,localRoutes,parcels,diag,key);
-    }
-  }
-
-  /**
-   * Build a bounded local plan for one owned rectangle.
-   * realized = district-route realizations already clipped to this rectangle.
-   */
-  function planLocalSpace(q, realized, area, dna, key) {
-    const p=policy(area,dna),arr=routeArrangement(q,realized),districtRoutes=mergeRouteCells(arr.routes),
-      localRoutes=[],parcels=[],diag={parcels:0,support:0,localRoutes:0,rootLocal:0,unserved:0,capHit:false,violations:{}};
-
-    const accessRoutes=districtRoutes.map((r,i)=>Object.assign({id:r.routeId||('route:'+i)},r));
-    if(!districtRoutes.length){
-      fallbackServe(q,p,dna,key,localRoutes,parcels,diag);
-    }else{
-      // Each residual rectangle is served from an existing route when possible.
-      // If a partial district route leaves an isolated residual, create a bounded
-      // local root there instead of filling it with arbitrary semantic rooms.
-      const ordered=arr.residual.slice().sort((a,b)=>a[1]-b[1]||a[0]-b[0]||qArea(b)-qArea(a));
-      for(const cell of ordered){
-        const access=bestAccess(cell,accessRoutes.concat(localRoutes));
-        if(access)serve(cell,access.edge.side,access.route.id,p,0,localRoutes,parcels,diag,key);
-        else{diag.unserved++;fallbackServe(cell,p,dna,key+'|u'+diag.unserved,localRoutes,parcels,diag);}
+  // Merge grid arrangement cells back into floor mass. Arrangement cuts are
+  // bookkeeping, not walls or hallways. Every residual square remains covered.
+  function mergeResidual(cells) {
+    const out=cells.map((q)=>q.slice());
+    let changed=true;
+    while(changed){changed=false;
+      outer:for(let i=0;i<out.length;i++)for(let j=i+1;j<out.length;j++){
+        const a=out[i],b=out[j];
+        if(a[1]===b[1]&&a[3]===b[3]&&(a[2]===b[0]||b[2]===a[0])){
+          out[i]=[Math.min(a[0],b[0]),a[1],Math.max(a[2],b[2]),a[3]];
+        }else if(a[0]===b[0]&&a[2]===b[2]&&(a[3]===b[1]||b[3]===a[1])){
+          out[i]=[a[0],Math.min(a[1],b[1]),a[2],Math.max(a[3],b[3])];
+        }else continue;
+        out.splice(j,1);changed=true;break outer;
       }
     }
+    return out.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  }
 
-    return {key,area,policy:p,districtRoutes,localRoutes,parcels,diagnostics:diag};
+  function planLocalSpace(q, realized, area, dna, key) {
+    const p=policy(area,dna),arr=routeArrangement(q,realized),districtRoutes=mergeRouteCells(arr.routes),
+      buildable=mergeResidual(arr.residual),parcels=[],remainders=[],
+      diag={parcels:0,support:0,localRoutes:0,rootLocal:0,unserved:0,capHit:false,violations:{}};
+    const accessRoutes=districtRoutes.map((r,i)=>Object.assign({id:r.routeId||('route:'+i)},r));
+    const add=(cell,side,id,access)=>{
+      if(qArea(cell)<=0)return;
+      if(parcels.length>=p.maxParcels){
+        const meta=metrics(cell,side,id,p,0,access);meta.role='support';meta.violations.push('parcel-cap');
+        remainders.push({id:key+'|support|'+remainders.length,q:cell,meta});diag.capHit=true;diag.support++;return;
+      }
+      parcelize(cell,side,id,p,0,access,parcels,diag);
+    };
+    for(const cell of buildable){
+      const access=bestAccess(cell,accessRoutes);
+      if(!access){diag.unserved++;add(cell,cell[2]-cell[0]>=cell[3]-cell[1]?'top':'left',null,'unserved');continue;}
+      const side=access.edge.side,F=frame(cell,side),edge=access.edge;
+      // Only actual route frontage qualifies. A partial corridor endpoint must
+      // not serve the whole side of a merged residual rectangle.
+      const start=(side==='top'||side==='bottom')?cell[0]:cell[1];
+      const u0=edge.s0-start,u1=edge.s1-start;
+      if(u0>0)add(F.rect(0,0,u0,F.V),side,null,'unserved');
+      if(u1<F.U)add(F.rect(u1,0,F.U,F.V),side,null,'unserved');
+      const dep=Math.min(F.V,p.maxDepth);
+      add(F.rect(u0,0,u1,dep),side,access.route.id,'circulation');
+      if(F.V>dep)add(F.rect(u0,dep,u1,F.V),side,null,'unserved');
+    }
+    // No local hall can be invented here. Access demands were resolved at
+    // world scope before this territory (or any interior) was requested.
+    return {key,area,policy:p,districtRoutes,localRoutes:[],buildable,parcels,remainders,diagnostics:diag};
   }
 
   /**
@@ -263,5 +229,5 @@
   }
 
   Object.assign(BR,{ SPACE_POLICIES:POLICY, SPACE_ARCHETYPES:ARCHETYPE,
-    spacePolicy:policy, planLocalSpace, spaceTypeCompatible });
+    spacePolicy:policy, planLocalSpace, spaceTypeCompatible, routeArrangement, mergeResidual });
 })(typeof window!=='undefined'?window:globalThis);

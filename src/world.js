@@ -95,16 +95,13 @@
     }
     structure(T) { return this.structureBy(this.final(T), T.district); }
     structuresIn(x0, y0, x1, y1) {
-      const C = BR.AREA_CFG.districtCell, out = [], seen = new Set();
-      for (let a = Math.floor(x0 / C) - 1; a <= Math.floor(x1 / C) + 1; a++)
-        for (let b = Math.floor(y0 / C) - 1; b <= Math.floor(y1 / C) + 1; b++) {
-          const d = BR.districtSeed(this.seed, a, b);
-          if (!d.exists || !BR.STRUCTURE_AREAS.has(d.type)) continue;
-          const k = d.type + ':' + d.id; if (seen.has(k)) continue; seen.add(k);
-          const P = this.structureBy(d.type, d.id);
-          if (!P || P.bounds[2] < x0 || P.bounds[0] > x1 || P.bounds[3] < y0 || P.bounds[1] > y1) continue;
-          out.push(P);
-        }
+      const out=[];
+      // Same bounded manifestation-address halo as the semantic field. The
+      // one-cell structure query omitted regional/branched extents near edges.
+      for(const M of this.manifestationsIn(x0-3,y0-3,x1+3,y1+3)) {
+        const P=this.structureBy(M.type,M.id);
+        if(P && P.bounds[2]>=x0 && P.bounds[0]<=x1 && P.bounds[3]>=y0 && P.bounds[1]<=y1)out.push(P);
+      }
       return out;
     }
     manifestationsIn(x0,y0,x1,y1) {
@@ -122,6 +119,10 @@
         const P=this.programBy(M.type,M.id);if(P)out.push(P);
       }
       return out;
+    }
+    routesIn(x0,y0,x1,y1) {
+      const q=[x0,y0,x1,y1];
+      return this.structuresIn(...q).flatMap((p)=>p.routes.filter((r)=>BR.routeRectsOverlap(r.rect,q)));
     }
     color(T) {
       if (!T._rgb) T._rgb = BR.areaColor(this.seed, this.final(T), T.cx, T.cy, (T.h >>> 8) / 16777216);
@@ -219,6 +220,7 @@
       r.programRole = r.program ? BR.programRoleAt(r.program,x,y) : null;
       r.dna = this.architecture(T);
       r.structure = this.structure(T);
+      r.routes = this.routesIn(x,y,x+0.001,y+0.001);
       const I = this.interiors.get(T.key);
       if (I) {
         const k = BR.interiorRoomAt(I, x, y);
@@ -228,6 +230,8 @@
         r.realizations = I.realizations || [];
         r.anchors = I.anchors || [];
         r.spacePlan = I.spacePlan || null;
+        r.routeNetworks = I.routeNetworks;
+        r.routeSpace = I.routeSpace;
       }
       return r;
     }
