@@ -100,6 +100,17 @@
       selected.push(c);
     }
     if (!selected.length && crosses.length) selected.push(crosses[0]);
+    // A bridge must cross both major routes, not merely share a candidate
+    // lattice line somewhere in the manifestation bounds.
+    if (wing) {
+      const lo=Math.max(trunk.s0,wing.s0),hi=Math.min(trunk.s1,wing.s1);
+      const bridge=nearest(usable.filter((c)=>c.line>=lo&&c.line<=hi),centerAlong)[0];
+      if (bridge) {
+        const j=selected.findIndex((c)=>c.line===bridge.line);
+        if(j>=0)selected.splice(j,1);
+        selected.unshift(bridge);
+      }
+    }
     for (let i = 0; i < selected.length; i++) {
       const c = selected[i], axis = dna.majorAxis === 'x' ? 'y' : 'x';
       let a0, a1, role;
