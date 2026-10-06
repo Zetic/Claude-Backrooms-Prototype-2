@@ -1,233 +1,173 @@
-/*
- * spaceplan.js - bounded local architectural planning.
- *
- * The world network owns all circulation. This layer subtracts its exact
- * physical footprint, then derives usable frontage/depth parcels. Deep or
- * unserved residuals remain support floor; it never inserts a local hallway.
- *
- * It operates only on rectangles/segments and bounded small graphs. There is
- * no raster field, flood fill, unbounded search, or regenerate-until-good loop.
- */
-(function (root) {
+/* Reusable architectural patterns. Rooms and circulation are composed together;
+ * every piece has an internal traversal graph, including pieces without halls.
+ * Area names never select geometry algorithms. Profiles and shared DNA do. */
+(function(root){
   'use strict';
-  const BR = root.BR;
-
-  const BASE = {
-    minDepth: 3.5, maxDepth: 12, minFrontage: 3.5, targetFrontage: 8,
-    maxFrontage: 14, maxAspect: 3.5, localWidth: 2,
-    maxParcels: 64
-  };
-  const POLICY = {
-    hotel:   { minDepth: 4.5, maxDepth: 9,  minFrontage: 3.2, targetFrontage: 5,  maxFrontage: 8.5, maxAspect: 2.5, localWidth: 2 },
-    offices: { minDepth: 4,   maxDepth: 13, minFrontage: 4,   targetFrontage: 10, maxFrontage: 16,  maxAspect: 4,   localWidth: 2 },
-    backrooms:{ minDepth: 3,  maxDepth: 15, minFrontage: 3,   targetFrontage: 8,  maxFrontage: 16,  maxAspect: 5,   localWidth: 2 },
-    poolrooms:{ minDepth: 5,  maxDepth: 18, minFrontage: 5,   targetFrontage: 12, maxFrontage: 24,  maxAspect: 5,   localWidth: 3 },
-    parking: { minDepth: 6,   maxDepth: 22, minFrontage: 6,   targetFrontage: 16, maxFrontage: 28,  maxAspect: 5,   localWidth: 4 },
-    home:    { minDepth: 4,   maxDepth: 10, minFrontage: 3.5, targetFrontage: 7,  maxFrontage: 12,  maxAspect: 3,   localWidth: 1.5 },
-    maintenance:{ minDepth: 3,maxDepth: 10, minFrontage: 3,   targetFrontage: 7,  maxFrontage: 14,  maxAspect: 4,   localWidth: 2 }
-  };
-  const PRI = BR.STRUCTURE_PRIORITY;
-
-  const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
-  const qArea = (q) => Math.max(0,q[2]-q[0]) * Math.max(0,q[3]-q[1]);
-
-  function policy(area, dna) {
-    const p = Object.assign({}, BASE, POLICY[area] || {});
-    if (dna) {
-      if (area === 'hotel') p.targetFrontage = clamp(dna.module, 4, 6);
-      else if (area === 'offices') p.targetFrontage = clamp(dna.module * 2, 8, 14);
-      p.localWidth = Math.max(p.localWidth, dna.corridorWidth || 0);
-    }
-    return p;
+  const BR=root.BR,{Rng,hash4,clamp,makeUF}=BR;
+  const LIMITS=Object.freeze({blocks:96,attempts:4,navRects:384});
+  const HALL=1,BLOCK=4;
+  const PATTERNS={loop:{minSide:16},elbow:{minSide:12},cross:{minSide:18},
+    wing:{minSide:12},enfilade:{minSide:10},open:{minSide:0}};
+  const PROFILE={patterns:{loop:1,elbow:1,cross:1,wing:1,enfilade:2,open:3},
+    roomFront:[6,12],maxRoomAspect:2.6,roomDepth:[4,16]};
+  function profile(areaName){return Object.assign({},PROFILE,BR.AREAS[areaName].generation||{});}
+  function block(q,role,pattern){return {q,role,pattern,k:role==='corridor'?HALL:BLOCK,access:[]};}
+  function frame(q,axis,flip){
+    const swap=axis==='y',U=swap?q[3]-q[1]:q[2]-q[0],V=swap?q[2]-q[0]:q[3]-q[1];
+    return {U,V,local:(x,y)=>{
+      let u=swap?y-q[1]:x-q[0],v=swap?x-q[0]:y-q[1];
+      if(flip){u=U-u;v=V-v;}return [u,v];
+    },rect:(u0,v0,u1,v1)=>{
+      if(flip){const a=U-u1,b=U-u0;u0=a;u1=b;const c=V-v1,d=V-v0;v0=c;v1=d;}
+      return swap?[q[0]+v0,q[1]+u0,q[0]+v1,q[1]+u1]:[q[0]+u0,q[1]+v0,q[0]+u1,q[1]+v1];
+    }};
   }
-
-  function frame(q, side) {
-    const [x0,y0,x1,y1]=q, w=x1-x0, h=y1-y0;
-    if (side === 'top') return { U:w,V:h,rect:(u0,v0,u1,v1)=>[x0+u0,y0+v0,x0+u1,y0+v1], front:'y0' };
-    if (side === 'bottom') return { U:w,V:h,rect:(u0,v0,u1,v1)=>[x0+u0,y1-v1,x0+u1,y1-v0], front:'y1' };
-    if (side === 'left') return { U:h,V:w,rect:(u0,v0,u1,v1)=>[x0+v0,y0+u0,x0+v1,y0+u1], front:'x0' };
-    return { U:h,V:w,rect:(u0,v0,u1,v1)=>[x1-v1,y0+u0,x1-v0,y0+u1], front:'x1' };
-  }
-
-  /** Shared edge, with side named from rectangle a's point of view. */
-  function shared(a,b) {
-    if (Math.abs(a[2]-b[0])<1e-9 || Math.abs(b[2]-a[0])<1e-9) {
-      const s0=Math.max(a[1],b[1]),s1=Math.min(a[3],b[3]);
-      if(s1-s0>0.05)return {o:'v',c:Math.abs(a[2]-b[0])<1e-9?a[2]:a[0],s0,s1,len:s1-s0,side:Math.abs(a[2]-b[0])<1e-9?'right':'left'};
-    }
-    if (Math.abs(a[3]-b[1])<1e-9 || Math.abs(b[3]-a[1])<1e-9) {
-      const s0=Math.max(a[0],b[0]),s1=Math.min(a[2],b[2]);
-      if(s1-s0>0.05)return {o:'h',c:Math.abs(a[3]-b[1])<1e-9?a[3]:a[1],s0,s1,len:s1-s0,side:Math.abs(a[3]-b[1])<1e-9?'bottom':'top'};
-    }
-    return null;
-  }
-
-  function routeArrangement(q, realized) {
-    const xs=new Set([q[0],q[2]]),ys=new Set([q[1],q[3]]),pieces=[];
-    for(const r of realized)for(const c of r.rects||[]){
-      const x0=Math.max(q[0],c[0]),y0=Math.max(q[1],c[1]),x1=Math.min(q[2],c[2]),y1=Math.min(q[3],c[3]);
-      if(x1-x0<0.05||y1-y0<0.05)continue;
-      xs.add(x0);xs.add(x1);ys.add(y0);ys.add(y1);pieces.push({q:[x0,y0,x1,y1],r});
-    }
-    const X=[...xs].sort((a,b)=>a-b),Y=[...ys].sort((a,b)=>a-b),cells=[];
-    for(let yi=0;yi<Y.length-1;yi++)for(let xi=0;xi<X.length-1;xi++){
-      const x0=X[xi],x1=X[xi+1],y0=Y[yi],y1=Y[yi+1],cx=(x0+x1)/2,cy=(y0+y1)/2;
-      const cover=pieces.filter((p)=>cx>=p.q[0]-1e-9&&cx<=p.q[2]+1e-9&&cy>=p.q[1]-1e-9&&cy<=p.q[3]+1e-9)
-        .sort((a,b)=>(PRI[a.r.hierarchy]-PRI[b.r.hierarchy])||(a.r.routeId<b.r.routeId?-1:1));
-      const flows=[];for(const p of cover)if(p.r.flow&&!flows.some((f)=>f.key===p.r.flow.key))flows.push(p.r.flow);
-      cells.push({q:[x0,y0,x1,y1],cover,flows,flowSig:flows.map((f)=>f.key).sort().join('|')});
-    }
-    const routes=[],residual=[];
-    for(const c of cells){
-      if(!c.cover.length){residual.push(c.q);continue;}
-      const r=c.cover[0].r;
-      routes.push({q:c.q,kind:'route',hierarchy:r.hierarchy,role:r.role,realization:r.status,flow:r.flow,flows:c.flows,routeId:r.routeId});
-    }
-    return {routes,residual};
-  }
-
-  function mergeRouteCells(cells) {
-    const a=cells.slice().sort((p,q)=>p.q[1]-q.q[1]||p.q[0]-q.q[0]||p.q[3]-q.q[3]);
-    const out=[],used=new Set();
-    const sig=(c)=>(c.hierarchy||'')+'|'+(c.realization||'')+'|'+c.flows.map((f)=>f.key).sort().join('|');
-    for(let i=0;i<a.length;i++){
-      if(used.has(i))continue;const c=a[i],q=c.q.slice(),S=sig(c);used.add(i);
-      let changed=true;
-      while(changed){changed=false;for(let j=0;j<a.length;j++){
-        if(used.has(j)||sig(a[j])!==S)continue;const d=a[j].q;
-        if(Math.abs(d[1]-q[1])<1e-9&&Math.abs(d[3]-q[3])<1e-9&&Math.abs(d[0]-q[2])<1e-9){
-          q[2]=d[2];used.add(j);changed=true;
+  function generatePattern(name,q,dna,cfg,rng,ports){
+    const F=frame(q,dna.majorAxis,rng.f()<.5),{U,V}=F;
+    const c=Math.min(dna.corridorWidth+.5,Math.min(U,V)/5),out=[];
+    const add=(u0,v0,u1,v1,role)=>{
+      if(u1<=u0||v1<=v0)return;
+      if(out.length>=LIMITS.blocks)throw new Error('Architectural block cap exceeded');
+      out.push(block(F.rect(u0,v0,u1,v1),role,name));
+    };
+    // Room-bank cuts avoid external apertures. These cuts belong to this
+    // architectural group; there are no district-wide corridor lines.
+    function bank(u0,v0,u1,v1,front){
+      const depth=v1-v0,len=u1-u0,target=Math.max(cfg.roomFront[0],dna.module,depth/cfg.maxRoomAspect);
+      const n=Math.max(1,Math.min(12,Math.floor(len/Math.min(cfg.roomFront[1],target))));
+      let last=u0;
+      for(let i=1;i<=n;i++){
+        let cut=i===n?u1:u0+len*i/n;
+        if(i<n){
+          const lo=last+cfg.roomFront[0],hi=u1-(n-i)*cfg.roomFront[0];
+          const ideal=clamp(cut,lo,hi);
+          for(const delta of [0,1,-1,2,-2,3,-3,4,-4]){
+            const candidate=clamp(ideal+delta,lo,hi),line=F.rect(candidate,v0,candidate,v1),vertical=line[0]===line[2];
+            const bad=ports.some(p=>p.o===(vertical?'h':'v')&&
+              (vertical?line[0]:line[1])>p.s0-.4&&(vertical?line[0]:line[1])<p.s1+.4);
+            cut=candidate;if(!bad)break;
+          }
         }
-      }}
-      out.push(Object.assign({},c,{q}));
+        add(last,v0,cut,v1,'room');
+        const b=out[out.length-1],r=F.rect(last,front,cut,front);
+        b.front=r[0]===r[2]?(r[0]===b.q[0]?'x0':'x1'):(r[1]===b.q[1]?'y0':'y1');
+        last=cut;
+      }
     }
+    if(name==='loop'){
+      add(0,0,U,c,'corridor');add(0,V-c,U,V,'corridor');
+      add(0,c,c,V-c,'corridor');add(U-c,c,U,V-c,'corridor');
+      add(c,c,U-c,V-c,'core');
+    }else if(name==='elbow'){
+      add(0,0,U,c,'corridor');add(0,c,c,V,'corridor');add(c,c,U,V,'core');
+    }else if(name==='cross'){
+      const u=clamp(Math.round(U*rng.range(.38,.62)/dna.module)*dna.module,c+5,U-c-5);
+      const v=clamp(Math.round(V*rng.range(.38,.62)/dna.module)*dna.module,c+5,V-c-5);
+      add(u,v,u+c,v+c,'corridor');add(u,0,u+c,v,'corridor');add(u,v+c,u+c,V,'corridor');
+      add(0,v,u,v+c,'corridor');add(u+c,v,U,v+c,'corridor');
+      add(0,0,u,v,'room');add(u+c,0,U,v,'room');add(0,v+c,u,V,'room');add(u+c,v+c,U,V,'room');
+    }else if(name==='wing'){
+      // Deep envelopes contain several connected wings, each with dimensionally
+      // suitable room banks. A shared end bay joins them within this piece.
+      const rows=Math.max(1,Math.ceil(V/(2*cfg.roomDepth[1]+c))),u0=rows>1?c:0;
+      if(rows>1)add(0,0,c,V,'corridor');
+      for(let row=0;row<rows;row++){
+        const v0=V*row/rows,v1=V*(row+1)/rows;
+        let v=clamp(v0+(v1-v0-c)*rng.range(.46,.54),v0+4,v1-c-4);
+        const approaches=ports.map(p=>F.local(p.x,p.y)).filter(([u,pv])=>
+          (Math.abs(u)<1e-6||Math.abs(u-U)<1e-6)&&pv>=v0+4+c/2&&pv<=v1-4-c/2);
+        if(approaches.length)v=approaches[0][1]-c/2;
+        add(u0,v,U,v+c,'corridor');bank(u0,v0,U,v,v);bank(u0,v+c,U,v1,v+c);
+      }
+    }else if(name==='enfilade'){
+      const n=Math.max(2,Math.min(4,Math.round(U/Math.max(10,dna.module*2))));
+      for(let i=0;i<n;i++)add(U*i/n,0,U*(i+1)/n,V,i===0?'entry':i===n-1?'destination':'room');
+    }else add(0,0,U,V,'open');
     return out;
   }
-
-  function bestAccess(q, routes) {
-    let best=null;
-    for(const r of routes){
-      const e=shared(q,r.q); if(!e)continue;
-      if(!best||e.len>best.edge.len||(e.len===best.edge.len&&r.id<best.route.id))best={edge:e,route:r};
-    }
-    return best;
+  function inward(side){return side===0?[0,1]:side===1?[0,-1]:side===2?[1,0]:[-1,0];}
+  function accessFor(b,p){
+    const q=b.q,axis=p.o==='v'?1:0,lo=Math.max(p.s0,q[axis]),hi=Math.min(p.s1,q[axis+2]);
+    if(hi-lo<.05)return null;
+    const edge=p.o==='v'?(p.c===q[0]?2:p.c===q[2]?3:-1):(p.c===q[1]?0:p.c===q[3]?1:-1);
+    if(edge<0)return null;
+    const t=(lo+hi)/2;
+    return {id:p.id,x:p.o==='v'?p.c:t,y:p.o==='h'?p.c:t,w:hi-lo,side:edge,
+      normal:inward(edge),kind:p.kind||'door',external:!!p.neighbor,
+      clearanceOnly:!!p.neighbor&&hi-lo<.7};
   }
-
-  function metrics(q, side, servedBy, p, depthLevel, accessKind) {
-    const F=frame(q,side), frontage=F.U, dep=F.V, aspect=Math.max(frontage,dep)/Math.max(0.001,Math.min(frontage,dep)),violations=[];
-    if(frontage<p.minFrontage-1e-9)violations.push('frontage-small');
-    if(frontage>p.maxFrontage+1e-9)violations.push('frontage-large');
-    if(dep<p.minDepth-1e-9)violations.push('depth-small');
-    if(dep>p.maxDepth+1e-9)violations.push('depth-large');
-    if(aspect>p.maxAspect+1e-9)violations.push('aspect');
-    const access=accessKind||'circulation';
-    if(access==='unserved')violations.push('unserved');
-    return {frontSide:F.front,frontage,depth:dep,aspect,servedBy,access,
-      plannerDepth:depthLevel,role:violations.length?'support':'occupiable',violations};
-  }
-
-  function parcelize(q, side, servedBy, p, depthLevel, accessKind, parcels, diag) {
-    const F=frame(q,side),U=F.U,V=F.V;
-    if(qArea(q)<0.1)return;
-    let maxN=Math.max(1,Math.floor(U/Math.max(0.1,p.minFrontage)));
-    let n=clamp(Math.round(U/Math.max(0.1,p.targetFrontage)),1,maxN);
-    while(U/n>p.maxFrontage&&n<maxN)n++;
-    if(parcels.length+n>p.maxParcels){
-      diag.capHit=true;n=Math.max(1,p.maxParcels-parcels.length);
-    }
-    if(n<=0)return;
-    for(let i=0;i<n;i++){
-      const u0=U*i/n,u1=U*(i+1)/n,qq=F.rect(u0,0,u1,V);
-      const m=metrics(qq,side,servedBy,p,depthLevel,accessKind);
-      if(parcels.length>=p.maxParcels){diag.capHit=true;break;}
-      const id='parcel:'+parcels.length;
-      parcels.push({id,q:qq,meta:m});diag.parcels++;
-      if(m.role==='support')diag.support++;
-      for(const v of m.violations)diag.violations[v]=(diag.violations[v]||0)+1;
-    }
-  }
-
-  // Merge grid arrangement cells back into floor mass. Arrangement cuts are
-  // bookkeeping, not walls or hallways. Every residual square remains covered.
-  function mergeResidual(cells) {
-    const out=cells.map((q)=>q.slice());
-    let changed=true;
-    while(changed){changed=false;
-      outer:for(let i=0;i<out.length;i++)for(let j=i+1;j<out.length;j++){
-        const a=out[i],b=out[j];
-        if(a[1]===b[1]&&a[3]===b[3]&&(a[2]===b[0]||b[2]===a[0])){
-          out[i]=[Math.min(a[0],b[0]),a[1],Math.max(a[2],b[2]),a[3]];
-        }else if(a[0]===b[0]&&a[2]===b[2]&&(a[3]===b[1]||b[3]===a[1])){
-          out[i]=[a[0],Math.min(a[1],b[1]),a[2],Math.max(a[3],b[3])];
-        }else continue;
-        out.splice(j,1);changed=true;break outer;
+  function buildPatternPlan(W,T,forced){
+    const areaName=W.final(T),dna=W.architecture(T),cfg=profile(areaName),ports=BR.territoryPorts(W,T);
+    const rng=new Rng(hash4(W.seed,T.i,T.j,T.k*97+0x706174)),program=W.program(T);
+    const role=program?BR.programRoleAt(program,T.cx,T.cy):'open',blocks=[],parts=[];
+    T.rects.forEach((q,ri)=>{
+      const weights={};
+      for(const name of Object.keys(PATTERNS)){
+        if(Math.min(q[2]-q[0],q[3]-q[1])<PATTERNS[name].minSide)continue;
+        let w=cfg.patterns[name]||0;
+        if(name===dna.patternFamily)w*=2.8;
+        if(['open','landmark','void'].includes(role)&&['open','enfilade'].includes(name))w*=2;
+        if(role==='repeating'&&name==='wing')w*=2;
+        if(role==='branch'&&['elbow','cross'].includes(name))w*=1.7;
+        if(w>0)weights[name]=w;
       }
+      const name=forced&&ri===0?forced:ri>0?'open':rng.weighted(weights)||'open';
+      if(!PATTERNS[name])throw new Error('Unknown architectural pattern: '+name);
+      const generated=generatePattern(name,q,dna,cfg,rng,ports.filter(p=>p.rectIndex===ri));
+      parts.push({id:T.key+'|part|'+ri,pattern:name,q,first:blocks.length,count:generated.length});
+      blocks.push(...generated);
+    });
+    if(blocks.length>LIMITS.blocks)throw new Error('Architectural block cap exceeded: '+T.key);
+    blocks.forEach((b,i)=>{b.id=T.key+'|space|'+i;b.index=i;});
+    const edges=[];
+    for(let i=0;i<blocks.length;i++)for(let j=i+1;j<blocks.length;j++){
+      const a=blocks[i],b=blocks[j],s=BR.segBetween(a.q,b.q);if(!s||s.s1-s.s0<.8)continue;
+      const halls=a.k===HALL&&b.k===HALL,front=a.front||b.front;
+      let rank=halls?-10:a.k===HALL||b.k===HALL?-5:0;
+      if(front&&front===(s.o==='v'?(s.c===a.q[0]?'x0':'x1'):(s.c===a.q[1]?'y0':'y1')))rank-=1;
+      edges.push({a:i,b:j,s,rank:rank+rng.f(),halls});
     }
-    return out.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
-  }
-
-  function planLocalSpace(q, realized, area, dna, key) {
-    const p=policy(area,dna),arr=routeArrangement(q,realized),districtRoutes=mergeRouteCells(arr.routes),
-      buildable=mergeResidual(arr.residual),parcels=[],remainders=[],
-      diag={parcels:0,support:0,localRoutes:0,rootLocal:0,unserved:0,capHit:false,violations:{}};
-    const accessRoutes=districtRoutes.map((r,i)=>Object.assign({id:r.routeId||('route:'+i)},r));
-    const add=(cell,side,id,access)=>{
-      if(qArea(cell)<=0)return;
-      if(parcels.length>=p.maxParcels){
-        const meta=metrics(cell,side,id,p,0,access);meta.role='support';meta.violations.push('parcel-cap');
-        remainders.push({id:key+'|support|'+remainders.length,q:cell,meta});diag.capHit=true;diag.support++;return;
-      }
-      parcelize(cell,side,id,p,0,access,parcels,diag);
-    };
-    for(const cell of buildable){
-      const access=bestAccess(cell,accessRoutes);
-      if(!access){diag.unserved++;add(cell,cell[2]-cell[0]>=cell[3]-cell[1]?'top':'left',null,'unserved');continue;}
-      const side=access.edge.side,F=frame(cell,side),edge=access.edge;
-      // Only actual route frontage qualifies. A partial corridor endpoint must
-      // not serve the whole side of a merged residual rectangle.
-      const start=(side==='top'||side==='bottom')?cell[0]:cell[1];
-      const u0=edge.s0-start,u1=edge.s1-start;
-      if(u0>0)add(F.rect(0,0,u0,F.V),side,null,'unserved');
-      if(u1<F.U)add(F.rect(u1,0,F.U,F.V),side,null,'unserved');
-      const dep=Math.min(F.V,p.maxDepth);
-      add(F.rect(u0,0,u1,dep),side,access.route.id,'circulation');
-      if(F.V>dep)add(F.rect(u0,dep,u1,F.V),side,null,'unserved');
+    const uf=makeUF(blocks.length),connections=[];
+    for(const e of edges.slice().sort((a,b)=>a.rank-b.rank||a.a-b.a||a.b-b.b)){
+      const tree=uf.union(e.a,e.b);if(!tree&&!e.halls)continue;
+      const len=e.s.s1-e.s.s0,chain=blocks[e.a].pattern==='enfilade';
+      const w=e.halls?len:Math.min(chain?4:1.8,len-.2);
+      // Frontage doors sit toward one end of a room, leaving usable corners for
+      // interior services and furnishings. Through-room connections stay central.
+      const frontage=!e.halls&&(blocks[e.a].k===HALL||blocks[e.b].k===HALL);
+      const t=clamp(e.s.s0+len*(frontage?.74:.5),e.s.s0+w/2+.1,e.s.s1-w/2-.1),
+        id=T.key+'|interface|'+connections.length;
+      const p={id,o:e.s.o,c:e.s.c,s0:t-w/2,s1:t+w/2,kind:e.halls?'continuation':chain?'opening':'door'};
+      const aa=accessFor(blocks[e.a],p),bb=accessFor(blocks[e.b],p);
+      if(!aa||!bb)throw new Error('Invalid pattern interface: '+id);
+      blocks[e.a].access.push(aa);blocks[e.b].access.push(bb);
+      connections.push(Object.assign({},p,{a:e.a,b:e.b,x:e.s.o==='v'?e.s.c:t,y:e.s.o==='h'?e.s.c:t,w,full:e.halls,s:e.s}));
     }
-    // No local hall can be invented here. Access demands were resolved at
-    // world scope before this territory (or any interior) was requested.
-    return {key,area,policy:p,districtRoutes,localRoutes:[],buildable,parcels,remainders,diagnostics:diag};
+    if(blocks.some((_,i)=>uf.find(i)!==uf.find(0)))throw new Error('Disconnected architectural pattern: '+T.key);
+    for(const p of ports){
+      const owners=[];
+      for(const b of blocks){const a=accessFor(b,p);if(a){b.access.push(a);owners.push(b.index);}}
+      if(!owners.length)throw new Error('Unattached external entrance: '+p.id);
+      p.spaces=owners;
+    }
+    for(const b of blocks){
+      const entry=b.access.find(a=>!a.external)||b.access[0];
+      if(!b.front&&entry)b.front=({0:'y0',1:'y1',2:'x0',3:'x1'})[entry.side];
+      const q=b.q,hz=b.front&&b.front[0]==='y';
+      b.meta={area:areaName,role:b.role,access:'pattern',frontSide:b.front||null,
+        frontage:hz?q[2]-q[0]:q[3]-q[1],depth:hz?q[3]-q[1]:q[2]-q[0],entrances:b.access.length,violations:[]};
+    }
+    return {key:'pattern:'+T.key,territory:T.key,area:areaName,dnaKey:dna.key,role,
+      family:parts[0].pattern,parts,blocks,ports,connections,bounds:T.bbox.slice(),limits:LIMITS};
   }
-
-  /**
-   * Generic semantic compatibility gate. Dense cellular archetypes require a
-   * served, dimensionally valid parcel. Large/open archetypes remain available
-   * for support or residual floor.
-   */
-  // Semantic generators are consumers of parcels, not owners of arbitrary
-  // leftover rectangles. Envelopes stay deliberately broad; their job is to
-  // reject geometrically implausible assignments, not make every room uniform.
-  const ARCHETYPE = {
-    guest:         { minF:3.2, maxF:8.5,  minD:4.5, maxD:9.5,  maxA:2.5, served:true },
-    office:        { minF:4,   maxF:18,   minD:4,   maxD:14,   maxA:4.2, served:true },
-    stalls:        { minF:4,   maxF:20,   minD:4,   maxD:12,   maxA:4.5, served:true },
-    warren:        { minF:5,   maxF:24,   minD:5,   maxD:16,   maxA:4.5, served:true },
-    corridorRooms: { minF:6,   maxF:30,   minD:5,   maxD:18,   maxA:5,   served:true },
-    house:         { minF:6,   maxF:22,   minD:5,   maxD:14,   maxA:3.5, served:true },
-    store:         { minF:5,   maxF:26,   minD:5,   maxD:18,   maxA:4.5, served:true }
-  };
-
-  function spaceTypeCompatible(area,type,meta,U,V) {
-    if(!meta)return true;
-    const E=ARCHETYPE[type];
-    if(!E)return true; // open/landmark/support archetypes may consume residual floor.
-    if(meta.role!=='occupiable')return false;
-    if(E.served&&(!meta.frontSide||meta.access==='unserved'))return false;
-    if(meta.frontage<E.minF||meta.frontage>E.maxF)return false;
-    if(meta.depth<E.minD||meta.depth>E.maxD)return false;
-    if(meta.aspect>E.maxA)return false;
-    return true;
+  // Small-cell archetypes consume suitable room envelopes, independently of
+  // semantic names. No unserved residuals or support-parcel substitutions exist.
+  function spaceTypeCompatible(areaName,type,meta,U,V){
+    if(type!=='guest')return true;
+    const cfg=profile(areaName),front=meta.frontage,depth=meta.depth;
+    return meta.entrances<=1&&!!meta.frontSide&&front>=3.2&&front<=12&&depth>=cfg.roomDepth[0]&&
+      depth<=cfg.roomDepth[1]&&Math.max(front/depth,depth/front)<=cfg.maxRoomAspect;
   }
-
-  Object.assign(BR,{ SPACE_POLICIES:POLICY, SPACE_ARCHETYPES:ARCHETYPE,
-    spacePolicy:policy, planLocalSpace, spaceTypeCompatible, routeArrangement, mergeResidual });
+  Object.assign(BR,{PATTERNS,PATTERN_LIMITS:LIMITS,generationProfile:profile,
+    buildPatternPlan,spaceTypeCompatible,patternAccess:accessFor,patternInward:inward});
 })(typeof window!=='undefined'?window:globalThis);

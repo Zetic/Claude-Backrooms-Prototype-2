@@ -2,6 +2,7 @@
  * world.js - lazy, cached, order-independent access to the generated world.
  *
  *   plan(i, j)        super-cell territories (cheap)          layout.js
+ *   pattern(T)        architectural groups and shared ports  spaceplan.js
  *   interior(T)       rooms of territory T (built on demand)  interior.js
  *   boundary(A, B)    shared wall + doors between A and B     boundary.js
  *
@@ -12,7 +13,7 @@
   'use strict';
   const BR = root.BR;
 
-  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, manifests: 2400, dna: 4000, programs: 2000, structures: 2000 };
+  const DEFAULT_LIMITS = { plans: 6000, patterns:4000, interiors: 5000, boundaries: 14000, pairs: 60000, manifests: 2400, dna: 4000, programs: 2000, structures: 2000 };
   const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
 
   class World {
@@ -21,13 +22,14 @@
       this.limits = Object.assign({}, DEFAULT_LIMITS, opts && opts.limits);
       this.plans = new Map();
       this.interiors = new Map();
+      this.patterns = new Map();
       this.boundaries = new Map();
       this.pairs = new Map();
       this.manifests = new Map();
       this.dna = new Map();
       this.programs = new Map();
       this.structures = new Map();
-      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, programsBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
+      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, programsBuilt: 0, structuresBuilt: 0, patternsBuilt:0, infillFallbacks:0, doorFailures: 0 };
     }
     evict(map, n) {
       const it = map.keys();
@@ -41,7 +43,7 @@
       if (!p) {
         p = BR.buildPlan(this, i, j);
         this.plans.set(k, p);
-        if (this.plans.size > this.limits.plans) this.evict(this.plans, this.limits.plans >> 2);
+        if (this.plans.size > this.limits.plans) this.evict(this.plans, Math.max(1,this.limits.plans >> 2));
       }
       return p;
     }
@@ -61,6 +63,13 @@
       return M;
     }
     architecture(T) { return BR.architectureDNA(this, T, this.final(T)); }
+    pattern(T) {
+      let p=this.patterns.get(T.key);
+      if(p){this.patterns.delete(T.key);this.patterns.set(T.key,p);return p;}
+      p=BR.buildPatternPlan(this,T);this.patterns.set(T.key,p);this.stats.patternsBuilt++;
+      if(this.patterns.size>this.limits.patterns)this.evict(this.patterns,Math.max(1,this.limits.patterns>>2));
+      return p;
+    }
     manifestation(T) {
       if (!T || !T.district) return null;
       const ij=T.district.split(',');
@@ -120,9 +129,12 @@
       }
       return out;
     }
-    routesIn(x0,y0,x1,y1) {
-      const q=[x0,y0,x1,y1];
-      return this.structuresIn(...q).flatMap((p)=>p.routes.filter((r)=>BR.routeRectsOverlap(r.rect,q)));
+    connectionsIn(x0,y0,x1,y1) {
+      const out=[],seen=new Set();
+      for(const T of this.territoriesIn(x0,y0,x1,y1))for(const p of this.pattern(T).ports){
+        if(seen.has(p.id))continue;seen.add(p.id);out.push(p);
+      }
+      return out;
     }
     color(T) {
       if (!T._rgb) T._rgb = BR.areaColor(this.seed, this.final(T), T.cx, T.cy, (T.h >>> 8) / 16777216);
@@ -138,7 +150,7 @@
       this.stats.interiorMs += now() - t0;
       this.stats.interiorsBuilt++;
       this.interiors.set(T.key, I);
-      if (this.interiors.size > this.limits.interiors) this.evict(this.interiors, this.limits.interiors >> 2);
+      if (this.interiors.size > this.limits.interiors) this.evict(this.interiors, Math.max(1,this.limits.interiors >> 2));
       return I;
     }
     hasInterior(T) { return this.interiors.has(T.key); }
@@ -150,7 +162,7 @@
       b = BR.buildBoundary(this, A, B);
       this.stats.boundariesBuilt++;
       this.boundaries.set(k, b);
-      if (this.boundaries.size > this.limits.boundaries) this.evict(this.boundaries, this.limits.boundaries >> 2);
+      if (this.boundaries.size > this.limits.boundaries) this.evict(this.boundaries, Math.max(1,this.limits.boundaries >> 2));
       return b;
     }
 
@@ -220,18 +232,15 @@
       r.programRole = r.program ? BR.programRoleAt(r.program,x,y) : null;
       r.dna = this.architecture(T);
       r.structure = this.structure(T);
-      r.routes = this.routesIn(x,y,x+0.001,y+0.001);
+      r.pattern = this.pattern(T);
       const I = this.interiors.get(T.key);
       if (I) {
         const k = BR.interiorRoomAt(I, x, y);
         if (k >= 0) { r.room = I.rooms[k]; r.roomIndex = k; }
         r.block = BR.interiorBlockAt(I, x, y);
-        r.obligations = I.obligations || [];
-        r.realizations = I.realizations || [];
-        r.anchors = I.anchors || [];
-        r.spacePlan = I.spacePlan || null;
-        r.routeNetworks = I.routeNetworks;
-        r.routeSpace = I.routeSpace;
+        r.traversals = I.traversals;
+        r.ports = I.ports;
+        r.diagnostics = I.diagnostics;
       }
       return r;
     }

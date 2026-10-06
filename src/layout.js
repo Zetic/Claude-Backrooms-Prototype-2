@@ -255,7 +255,7 @@
       info.mode = info.wall === 'open' ? 'base' : rng.f() < R.pNone || info.len < 8 ? 'optional' : 'base';
     }
     W.pairs.set(key, info);
-    if (W.pairs.size > W.limits.pairs) W.evict(W.pairs, W.limits.pairs >> 2);
+    if (W.pairs.size > W.limits.pairs) W.evict(W.pairs, Math.max(1,W.limits.pairs >> 2));
     return info;
   }
 

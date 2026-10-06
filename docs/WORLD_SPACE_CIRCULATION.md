@@ -1,3 +1,5 @@
+> Historical PR #6 design. The current generator replaces physical global route reservations with [architectural patterns and shared entrances](ARCHITECTURAL_PATTERNS.md).
+
 # World-space circulation milestone
 
 Circulation now owns architectural space before territory interiors are built.
