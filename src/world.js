@@ -12,7 +12,7 @@
   'use strict';
   const BR = root.BR;
 
-  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000 };
+  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000 };
   const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
 
   class World {
@@ -23,6 +23,7 @@
       this.interiors = new Map();
       this.boundaries = new Map();
       this.pairs = new Map();
+      this.dna = new Map();
       this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, doorFailures: 0 };
     }
     evict(map, n) {
@@ -47,6 +48,7 @@
     }
     adj(T) { return BR.adjacency(this, T); }
     final(T) { return BR.finalArea(this, T); }
+    architecture(T) { return BR.architectureDNA(this, T, this.final(T)); }
     color(T) {
       if (!T._rgb) T._rgb = BR.areaColor(this.seed, this.final(T), T.cx, T.cy, (T.h >>> 8) / 16777216);
       return T._rgb;
@@ -137,6 +139,7 @@
       const T = BR.territoryAt(this, x, y);
       if (!T) return null;
       const r = { territory: T, area: this.final(T), base: T.base, district: T.district };
+      r.dna = this.architecture(T);
       const I = this.interiors.get(T.key);
       if (I) {
         const k = BR.interiorRoomAt(I, x, y);
