@@ -41,7 +41,8 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
       structure: it.structureKey || null,
       obligations: (it.obligations || []).map((o) => [o.routeId,o.hierarchy,o.axis,r6(o.line),r6(o.s0),r6(o.s1),r6(o.width)]),
       realizations: (it.realizations || []).map((r) => [r.routeId,r.status,r.reason,r6(r.shift),r.rects.map((q)=>q.map(r6))]),
-      blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type, b.flow ? b.flow.key : null]),
+      blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type,
+        (b.flows || (b.flow ? [b.flow] : [])).map((f) => f.key).sort()]),
       rooms: it.rooms.map((r) => r.kind + ':' + r.rects.map((q) => q.map(r6).join(',')).join('/')),
       links: it.links.map((l) => [l.a, l.b, r6(l.x), r6(l.y), r6(l.w), l.kind]),
       geo: ['walls', 'minor', 'hatch', 'masses', 'voids', 'pools', 'props', 'rounds', 'pillars'].map((k) => it[k].map(r6))
@@ -176,7 +177,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
     const routeIds=new Set(I.obligations.map((o)=>o.routeId));
     for(const r of I.realizations){
       if(r.status==='exact')exact++; else if(r.status==='adapted')adapted++; else failed++;
-      if(r.status!=='failed'&&!I.blocks.some((b)=>b.flow&&b.flow.key===r.routeId))badFlows++;
+      if(r.status!=='failed'&&!I.blocks.some((b)=>(b.flows||(b.flow?[b.flow]:[])).some((f)=>f.key===r.routeId)))badFlows++;
       if(!routeIds.has(r.routeId))badFlows++;
     }
   }
@@ -206,7 +207,10 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       continuations+=B.continuations.length;redundantDoors+=B.doors.length;
       if(B.semantic!=='continuation')missingLinks++;
       for(const c of B.continuations){if(wallHits(B,c))continuationWalls++;
-        if(!B.links.some((L)=>L.kind==='continuation'&&Math.abs(L.x-c.x)<1e-6&&Math.abs(L.y-c.y)<Math.max(2,c.w)))missingLinks++;}
+        const linked=B.links.some((L)=>L.kind==='continuation'&&(
+          c.o==='v' ? Math.abs(L.x-c.x)<1e-6&&L.y>=c.s0-1e-6&&L.y<=c.s1+1e-6 :
+                      Math.abs(L.y-c.y)<1e-6&&L.x>=c.s0-1e-6&&L.x<=c.s1+1e-6));
+        if(!linked)missingLinks++;}
     }
   }
   check('planned circulation crosses technical territory seams', continuations >= 40, `${continuations} continuations`);
