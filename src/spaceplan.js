@@ -237,18 +237,31 @@
    * served, dimensionally valid parcel. Large/open archetypes remain available
    * for support or residual floor.
    */
+  // Semantic generators are consumers of parcels, not owners of arbitrary
+  // leftover rectangles. Envelopes stay deliberately broad; their job is to
+  // reject geometrically implausible assignments, not make every room uniform.
+  const ARCHETYPE = {
+    guest:         { minF:3.2, maxF:8.5,  minD:4.5, maxD:9.5,  maxA:2.5, served:true },
+    office:        { minF:4,   maxF:18,   minD:4,   maxD:14,   maxA:4.2, served:true },
+    stalls:        { minF:4,   maxF:20,   minD:4,   maxD:12,   maxA:4.5, served:true },
+    warren:        { minF:5,   maxF:24,   minD:5,   maxD:16,   maxA:4.5, served:true },
+    corridorRooms: { minF:6,   maxF:30,   minD:5,   maxD:18,   maxA:5,   served:true },
+    house:         { minF:6,   maxF:22,   minD:5,   maxD:14,   maxA:3.5, served:true },
+    store:         { minF:5,   maxF:26,   minD:5,   maxD:18,   maxA:4.5, served:true }
+  };
+
   function spaceTypeCompatible(area,type,meta,U,V) {
     if(!meta)return true;
-    const dense=new Set(['guest','office','stalls','warren','corridorRooms','house']);
-    if(dense.has(type)&&meta.role!=='occupiable')return false;
-    if(type==='guest'){
-      return !!meta.frontSide&&meta.access!=='unserved'&&meta.frontage>=3.2&&meta.frontage<=8.5&&
-        meta.depth>=4.5&&meta.depth<=9.5&&meta.aspect<=2.5;
-    }
-    if(type==='office')return meta.depth<=14&&meta.frontage>=4&&meta.aspect<=4.2;
-    if((type==='stalls'||type==='corridorRooms')&&meta.depth>14)return false;
+    const E=ARCHETYPE[type];
+    if(!E)return true; // open/landmark/support archetypes may consume residual floor.
+    if(meta.role!=='occupiable')return false;
+    if(E.served&&(!meta.frontSide||meta.access==='unserved'))return false;
+    if(meta.frontage<E.minF||meta.frontage>E.maxF)return false;
+    if(meta.depth<E.minD||meta.depth>E.maxD)return false;
+    if(meta.aspect>E.maxA)return false;
     return true;
   }
 
-  Object.assign(BR,{ SPACE_POLICIES:POLICY, spacePolicy:policy, planLocalSpace, spaceTypeCompatible });
+  Object.assign(BR,{ SPACE_POLICIES:POLICY, SPACE_ARCHETYPES:ARCHETYPE,
+    spacePolicy:policy, planLocalSpace, spaceTypeCompatible });
 })(typeof window!=='undefined'?window:globalThis);
