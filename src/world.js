@@ -25,7 +25,7 @@
       this.pairs = new Map();
       this.dna = new Map();
       this.structures = new Map();
-      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, doorFailures: 0 };
+      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
     }
     evict(map, n) {
       const it = map.keys();
@@ -57,6 +57,7 @@
       if (P) { this.structures.delete(k); this.structures.set(k, P); return P; }
       P = BR.buildDistrictStructure(this, area, district);
       if (P) {
+        this.stats.structuresBuilt++;
         this.structures.set(k, P);
         if (this.structures.size > this.limits.structures) this.evict(this.structures, Math.max(1, this.limits.structures >> 2));
       }
@@ -167,11 +168,15 @@
       if (!T) return null;
       const r = { territory: T, area: this.final(T), base: T.base, district: T.district };
       r.dna = this.architecture(T);
+      r.structure = this.structure(T);
       const I = this.interiors.get(T.key);
       if (I) {
         const k = BR.interiorRoomAt(I, x, y);
         if (k >= 0) { r.room = I.rooms[k]; r.roomIndex = k; }
         r.block = BR.interiorBlockAt(I, x, y);
+        r.obligations = I.obligations || [];
+        r.realizations = I.realizations || [];
+        r.anchors = I.anchors || [];
       }
       return r;
     }
