@@ -14,14 +14,17 @@
     font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
   canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; touch-action: none; }
   canvas.drag { cursor: grabbing; }
-  #hud { position: fixed; top: 12px; left: 12px; width: 276px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(6px); user-select: none; }
+  #hud { position: fixed; top: 12px; left: 12px; width: 292px; max-height: calc(100vh - 24px); overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    backdrop-filter: blur(6px); user-select: none; }
   #hud h1 { font-size: 13px; margin: 0 0 10px; letter-spacing: .02em; color: var(--accent); font-weight: 600; cursor: pointer; }
   .row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
   input[type=text] { flex: 1; min-width: 0; background: #1b1b1b; color: var(--text); border: 1px solid #3a3a3a;
     border-radius: 6px; padding: 5px 7px; font: inherit; font-variant-numeric: tabular-nums; }
   button { background: #2f2f2f; color: var(--text); border: 1px solid #444; border-radius: 6px; padding: 5px 9px;
     font: inherit; cursor: pointer; }
+  select { width: 100%; background: #1b1b1b; color: var(--text); border: 1px solid #3a3a3a; border-radius: 6px;
+    padding: 5px 7px; font: inherit; }
   button:hover { background: #3a3a3a; }
   label.tg { display: flex; gap: 7px; align-items: center; color: var(--muted); cursor: pointer; padding: 1px 0; }
   label.tg input { accent-color: #e5cc9b; }
@@ -62,6 +65,28 @@
     <label class="tg"><input type="checkbox" id="o-cells"> Super-cells</label>
     <label class="tg"><input type="checkbox" id="o-rooms"> Room graph</label>
   </div>
+  <div class="sec">Generation stage</div>
+  <select id="stage" aria-label="Generation stage">
+    <option value="final">Final architecture</option>
+    <option value="dna">1 · DNA regions</option>
+    <option value="candidates">2 · Candidate lattice</option>
+    <option value="selected">3 · Selected structure</option>
+    <option value="obligations">4 · Territory obligations</option>
+    <option value="realized">5 · Realized circulation</option>
+    <option value="boundaries">6 · Boundary reconciliation</option>
+    <option value="full">Full generation debug</option>
+  </select>
+  <div class="sec">Generation debug</div>
+  <div class="grid2">
+    <label class="tg"><input type="checkbox" id="o-dnaDebug"> DNA regions</label>
+    <label class="tg"><input type="checkbox" id="o-candidateRoutes"> Candidate lattice</label>
+    <label class="tg"><input type="checkbox" id="o-selectedRoutes"> Selected routes</label>
+    <label class="tg"><input type="checkbox" id="o-structureNodes"> Nodes / anchors</label>
+    <label class="tg"><input type="checkbox" id="o-obligations"> Obligations</label>
+    <label class="tg"><input type="checkbox" id="o-realizedRoutes"> Realized routes</label>
+    <label class="tg"><input type="checkbox" id="o-continuations"> Continuations</label>
+    <label class="tg"><input type="checkbox" id="o-routeFailures"> Adapt / failures</label>
+  </div>
   <div id="info">Hover the map to inspect it.</div>
   <div id="stats"></div>
 </div>
@@ -70,6 +95,7 @@
 <script src="src/core.js"></script>
 <script src="src/areas.js"></script>
 <script src="src/layout.js"></script>
+<script src="src/structure.js"></script>
 <script src="src/zones.js"></script>
 <script src="src/interior.js"></script>
 <script src="src/boundary.js"></script>
@@ -82,7 +108,7 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const $ = (id) => document.getElementById(id);
-  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms'];
+  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms', 'dnaDebug', 'candidateRoutes', 'selectedRoutes', 'structureNodes', 'obligations', 'realizedRoutes', 'continuations', 'routeFailures'];
 
   // ---------- state (mirrored into the URL hash so views are shareable)
   const Q = new URLSearchParams(location.hash.slice(1));
@@ -149,7 +175,7 @@
     $('stats').textContent =
       'x ' + state.x.toFixed(0).padStart(7) + '   y ' + state.y.toFixed(0).padStart(7) + '   zoom ' + state.zoom.toFixed(2) + '\n' +
       'view: ' + lastItems.mode + ' · ' + lastItems.tiles + ' tiles' + (pending ? '  (generating…)' : '') + '\n' +
-      'built: ' + world.plans.size + ' plans · ' + s.interiorsBuilt + ' interiors (' + (s.interiorMs / Math.max(1, s.interiorsBuilt)).toFixed(2) + ' ms avg)\n' +
+      'built: ' + world.plans.size + ' plans · ' + s.structuresBuilt + ' structures · ' + s.interiorsBuilt + ' interiors (' + (s.interiorMs / Math.max(1, s.interiorsBuilt)).toFixed(2) + ' ms avg)\n' +
       'frame: ' + frameMs.toFixed(1) + ' ms';
   }
 
@@ -164,7 +190,18 @@
     let html = '<b>' + A.name + '</b> &middot; ' + A.role + (r.area !== r.base ? ' in ' + BR.AREAS[r.base].name : '') +
       '<br>territory ' + T.key + ' &middot; ' + (b[2] - b[0]) + '×' + (b[3] - b[1]) + ' m';
     if (r.dna) html += '<br>DNA ' + r.dna.key + ' &middot; ' + r.dna.majorAxis.toUpperCase() + '-axis &middot; ' + r.dna.corridorWidth + 'm corridor &middot; ' + r.dna.module + 'm module';
-    if (r.block) html += '<br>zone ' + r.block.zone + (r.block.sub.length > 1 ? ' (' + r.block.sub.join(' › ') + ')' : '') + (r.room ? ' &middot; ' + r.room.kind : '');
+    if (r.structure) html += '<br>structure ' + r.structure.key + ' &middot; ' + r.structure.routes.length + ' routes &middot; ' + r.structure.anchors.length + ' anchors';
+    if (r.block) {
+      html += '<br>zone ' + r.block.zone + (r.block.sub.length > 1 ? ' (' + r.block.sub.join(' › ') + ')' : '') + (r.room ? ' &middot; ' + r.room.kind : '');
+      if (r.block.flow) html += '<br>flow ' + r.block.flow.kind + ' &middot; ' + r.block.flow.axis.toUpperCase() + ' &middot; ' + r.block.flow.status;
+      if (r.block.anchorKind) html += '<br>anchor ' + r.block.anchorKind;
+    }
+    if (r.realizations && r.realizations.length) {
+      const ex = r.realizations.filter((x) => x.status === 'exact').length;
+      const ad = r.realizations.filter((x) => x.status === 'adapted').length;
+      const fa = r.realizations.filter((x) => x.status === 'failed').length;
+      html += '<br>routes exact ' + ex + ' &middot; adapted ' + ad + ' &middot; failed ' + fa;
+    }
     $('info').innerHTML = html;
     if (hoverKey !== T.key) { hoverKey = T.key; dirty = true; }
   }
@@ -248,6 +285,27 @@
     requestAnimationFrame(keyLoop);
   })(lastT);
 
+  // ---------- generation-stage presets
+  const DEBUG_KEYS = ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes','obligations','realizedRoutes','continuations','routeFailures'];
+  const STAGES = {
+    final: [],
+    dna: ['dnaDebug'],
+    candidates: ['dnaDebug','candidateRoutes'],
+    selected: ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes'],
+    obligations: ['selectedRoutes','structureNodes','obligations'],
+    realized: ['selectedRoutes','structureNodes','obligations','realizedRoutes','routeFailures'],
+    boundaries: ['realizedRoutes','continuations','routeFailures'],
+    full: DEBUG_KEYS.slice()
+  };
+  function applyStage(name) {
+    const on = new Set(STAGES[name] || []);
+    for (const k of DEBUG_KEYS) {
+      state.opts[k] = on.has(k);
+      const el = $('o-' + k); if (el) el.checked = state.opts[k];
+    }
+    changed();
+  }
+
   // ---------- HUD
   $('seed').value = state.seed;
   $('seed').addEventListener('change', () => { state.seed = $('seed').value.trim() || '0'; world = new BR.World(seedNum(state.seed)); changed(); });
@@ -265,6 +323,7 @@
     el.checked = state.opts[k];
     el.addEventListener('change', () => { state.opts[k] = el.checked; changed(); });
   }
+  $('stage').addEventListener('change', () => applyStage($('stage').value));
   document.querySelector('#hud h1').addEventListener('click', () => $('hud').classList.toggle('min'));
 
   window.addEventListener('resize', resize);
