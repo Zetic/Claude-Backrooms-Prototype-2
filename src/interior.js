@@ -140,7 +140,7 @@
     R.status='adapted';R.shift=delta;R.rects=pieces;R.flow=flowFromObligation(dna,o,'adapted');return R;
   }
 
-  function plannedBlocks(q, obligations, anchors, rng, st, area, out, realizations, spacePlans, planKey) {
+  function plannedBlocks(q, obligations, anchors, rng, st, area, out, realizations, spacePlans, planKey, program) {
     const outStart=out.length;
     const realized=[];
     for(const o of obligations){
@@ -155,19 +155,21 @@
     const P=BR.planLocalSpace(q,realized,area,st.dna,planKey);
     spacePlans.push(P);
 
+    const roleFor=(q2)=>program?BR.programRoleAt(program,(q2[0]+q2[2])/2,(q2[1]+q2[3])/2):null;
     for(const r of P.districtRoutes){
       const b=blk(r.q,r.hierarchy==='service'?SERVICE:HALL);
       b.flow=r.flow||null;b.flows=(r.flows||[]).slice();b.routeHierarchy=r.hierarchy;
-      b.realization=r.realization;b.routeId=r.routeId;out.push(b);
+      b.realization=r.realization;b.routeId=r.routeId;b.programRole=roleFor(r.q);out.push(b);
     }
     for(const r of P.localRoutes){
       const b=blk(r.q,HALL);
-      b.routeHierarchy='local';b.realization='local';b.routeId=r.routeId;b.localRoute=true;
+      b.routeHierarchy='local';b.realization='local';b.routeId=r.routeId;b.localRoute=true;b.programRole=roleFor(r.q);
       out.push(b);
     }
     for(const p of P.parcels){
-      const b=blk(p.q,BLOCK);
-      b.space=Object.assign({id:p.id,area},p.meta);
+      const b=blk(p.q,BLOCK),role=roleFor(p.q);
+      b.programRole=role;
+      b.space=Object.assign({id:p.id,area,programRole:role},p.meta);
       b.front=b.space.frontSide||null;
       out.push(b);
     }
@@ -562,7 +564,8 @@
       if (structure.plan) {
         const obs = structure.routes.filter((o) => o.rectIndex === ri);
         const ans = structure.anchors.filter((a) => a.x >= q[0] && a.x <= q[2] && a.y >= q[1] && a.y <= q[3]);
-        plannedBlocks(q, obs, ans, rng, st, area, blocks, realizations, spacePlans, T.key + '|rect|' + ri); return;
+        plannedBlocks(q, obs, ans, rng, st, area, blocks, realizations, spacePlans,
+          T.key + '|rect|' + ri, structure.plan.program || null); return;
       }
       if (ri > 0 || w * h < 60 || Math.min(w, h) < 6) { blocks.push(blk(q, ROOM)); return; }
       LAY[A.style](q, rng, st, A, blocks);
@@ -579,7 +582,10 @@
         return a;
       },{parcels:0,support:0,localRoutes:0,unserved:0,capHit:false,violations:{}})
     };
-    const I = { key: T.key, area, landmark, dna, dnaKey: dna.key, structureKey: structure.plan && structure.plan.key,
+    const I = { key: T.key, area, landmark, dna, dnaKey: dna.key,
+      manifestation: structure.plan && structure.plan.manifestation || null,
+      programKey: structure.plan && structure.plan.programKey || null,
+      structureKey: structure.plan && structure.plan.key,
       obligations: structure.routes, anchors: structure.anchors, realizations, spacePlan, blocks, zones: [], rooms: [], links: [], walls: [] };
     const nb = blocks.map(() => []);
     for (let i = 0; i < blocks.length; i++) for (let j = i + 1; j < blocks.length; j++)
@@ -603,7 +609,8 @@
         if (!t) {
           const avoid = [];
           for (const j of nb[i]) if (blocks[j].z >= 0) avoid.push(I.zones[blocks[j].z].type);
-          t = BR.pickZoneType(rng, st.zones, q, avoid, 0, b.space || null);
+          const roleWeights=BR.programZoneWeights?BR.programZoneWeights(area,b.programRole,st.zones):st.zones;
+          t = BR.pickZoneType(rng, roleWeights, q, avoid, 0, b.space || null);
         }
         Z = BR.fillZone(t, q, rng, st, { front: b.front, space: b.space || null, garden: area === 'hotel' || area === 'home' });
       }
@@ -640,7 +647,7 @@
     for (const b of I.blocks) if (x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1)
       return { kind: b.k, zone: I.zones[b.z].type, sub: I.zones[b.z].sub, flow: b.flow || null,
         flows: b.flows || (b.flow ? [b.flow] : []), realization: b.realization || null,
-        routeHierarchy: b.routeHierarchy || null, space: b.space || null,
+        routeHierarchy: b.routeHierarchy || null, programRole: b.programRole || null, space: b.space || null,
         anchor: b.anchor || null, anchorKind: b.anchorKind || null };
     return null;
   }
