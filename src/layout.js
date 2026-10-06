@@ -130,7 +130,7 @@
         base: a.area, district: a.district,
         h: hash4(seed, i, j, k * 16 + S.TERR),
         bbox: [bx0, by0, bx1, by1],
-        _adj: null, _final: undefined, _front: undefined, _bands: null, _carve: null
+        _adj: null, _final: undefined, _front: undefined
       };
     });
     return { i, j, core, ears, territories };
@@ -211,18 +211,6 @@
     if (!f && cands.length) f = cands[cands.length - 1].U.key;
     P._front = f;
     return f;
-  }
-
-  // ------------------------------------------------------- no edge bands
-  // Kept as compatibility helpers for render/interior callers. Automatic
-  // maintenance strips were removed; territories retain their full rectangles.
-  function bands(W, T) {
-    if (!T._bands) T._bands = [];
-    return T._bands;
-  }
-  function carveBands(W, T) {
-    if (!T._carve) T._carve = { rects: T.rects.map((r) => r.slice()), strips: [] };
-    return T._carve;
   }
 
   // ----------------------------------------------------------------- pairs
@@ -316,6 +304,6 @@
 
   Object.assign(BR, {
     LAYOUT: CFG, superCell, buildPlan, segBetween, adjacency, finalArea, frontOf,
-    pairKey, pairInfo, doorCount, bands, carveBands, territoryAt
+    pairKey, pairInfo, doorCount, territoryAt
   });
 })(typeof window !== 'undefined' ? window : globalThis);
