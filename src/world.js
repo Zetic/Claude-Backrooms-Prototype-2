@@ -12,7 +12,7 @@
   'use strict';
   const BR = root.BR;
 
-  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000, programs: 2000, structures: 2000 };
+  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, manifests: 2400, dna: 4000, programs: 2000, structures: 2000 };
   const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
 
   class World {
@@ -23,6 +23,7 @@
       this.interiors = new Map();
       this.boundaries = new Map();
       this.pairs = new Map();
+      this.manifests = new Map();
       this.dna = new Map();
       this.programs = new Map();
       this.structures = new Map();
@@ -50,11 +51,20 @@
     }
     adj(T) { return BR.adjacency(this, T); }
     final(T) { return BR.finalArea(this, T); }
+    manifestSeed(a,b) {
+      const k=a+','+b;
+      let M=this.manifests.get(k);
+      if(M){this.manifests.delete(k);this.manifests.set(k,M);return M;}
+      M=BR.manifestationSeed(this.seed,a,b);
+      this.manifests.set(k,M);
+      if(this.manifests.size>this.limits.manifests)this.evict(this.manifests,Math.max(1,this.limits.manifests>>2));
+      return M;
+    }
     architecture(T) { return BR.architectureDNA(this, T, this.final(T)); }
     manifestation(T) {
       if (!T || !T.district) return null;
       const ij=T.district.split(',');
-      return BR.manifestationSeed(this.seed,+ij[0],+ij[1]);
+      return this.manifestSeed(+ij[0],+ij[1]);
     }
     programBy(area, district) {
       if (!area || !district || !BR.STRUCTURE_AREAS.has(area)) return null;
@@ -98,9 +108,9 @@
       return out;
     }
     manifestationsIn(x0,y0,x1,y1) {
-      const C=BR.AREA_CFG.districtCell,out=[];
-      for(let a=Math.floor(x0/C)-1;a<=Math.floor(x1/C)+1;a++)for(let b=Math.floor(y0/C)-1;b<=Math.floor(y1/C)+1;b++){
-        const M=BR.manifestationSeed(this.seed,a,b);if(!M.exists)continue;
+      const C=BR.AREA_CFG.districtCell,out=[],R=BR.MANIFEST_SEARCH_CELLS||1;
+      for(let a=Math.floor(x0/C)-R;a<=Math.floor(x1/C)+R;a++)for(let b=Math.floor(y0/C)-R;b<=Math.floor(y1/C)+R;b++){
+        const M=this.manifestSeed(a,b);if(!M.exists)continue;
         const B=M.bounds;if(B[2]<x0||B[0]>x1||B[3]<y0||B[1]>y1)continue;
         out.push(M);
       }
