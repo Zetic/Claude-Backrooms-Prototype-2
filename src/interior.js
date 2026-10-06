@@ -107,6 +107,14 @@
     return best;
   }
 
+  /** Stable identity for a circulation line shared by multiple territories. */
+  function flowContract(dna, kind, axis, start, width) {
+    return {
+      key: dna.key + '|' + kind + '|' + axis + '|' + start + '|' + width,
+      dna: dna.key, kind, axis, start, width
+    };
+  }
+
   /** Cut [0,U) into chunks of length in [a,b] (last chunk absorbs a short remainder). */
   function chunks(U, rng, a, b) {
     const out = [];
@@ -138,17 +146,25 @@
     const F = preferredFrame(q, o.axis, 14, o.depthMin + cw), U = F.U, V = F.V, dm = o.depthMin;
     if (U < 14 || V < dm + cw) { out.push(blk(q, BLOCK)); return; }
     const perp0 = F.horiz ? q[1] : q[0];
-    let v0;
+    let v0, mainAligned = false;
     if (V >= 2 * dm + cw) {
-      v0 = o.align ? alignedOffset(perp0, dm, V - dm - cw, o.spineSpacing, o.spinePhase) : null;
+      if (o.align) {
+        v0 = alignedOffset(perp0, dm, V - dm - cw, o.spineSpacing, o.spinePhase);
+        mainAligned = v0 !== null;
+      } else v0 = null;
       if (v0 === null) v0 = dm + Math.round((V - 2 * dm - cw) * rng.range(0.25, 0.75));
     } else v0 = rng.f() < 0.5 ? 0 : V - cw;
-    out.push(blk(F.R(0, v0, U, v0 + cw), HALL));
+    const main = blk(F.R(0, v0, U, v0 + cw), HALL);
+    if (mainAligned && st.dna) main.flow = flowContract(st.dna, 'spine', F.horiz ? 'x' : 'y', perp0 + v0, cw);
+    out.push(main);
 
-    let cross = -1;
+    let cross = -1, crossAligned = false;
+    const along0 = F.horiz ? q[0] : q[1];
     if (U >= 46 && rng.f() < (o.crossChance === undefined ? 0.55 : o.crossChance)) {
-      const along0 = F.horiz ? q[0] : q[1];
-      cross = o.align ? alignedOffset(along0, Math.round(U * 0.25), Math.round(U * 0.75) - cw, o.crossSpacing, o.crossPhase) : null;
+      if (o.align) {
+        cross = alignedOffset(along0, Math.round(U * 0.25), Math.round(U * 0.75) - cw, o.crossSpacing, o.crossPhase);
+        crossAligned = cross !== null;
+      } else cross = null;
       if (cross === null) cross = Math.round(U * rng.range(0.3, 0.7));
     }
     const bands = [];
@@ -156,7 +172,11 @@
     if (v0 + cw < V) bands.push([v0 + cw, V]);
     for (const [b0, b1] of bands) {
       const runs = cross < 0 ? [[0, U]] : [[0, cross], [cross + cw, U]];
-      if (cross >= 0) out.push(blk(F.R(cross, b0, cross + cw, b1), HALL));
+      if (cross >= 0) {
+        const cb = blk(F.R(cross, b0, cross + cw, b1), HALL);
+        if (crossAligned && st.dna) cb.flow = flowContract(st.dna, 'cross', F.horiz ? 'y' : 'x', along0 + cross, cw);
+        out.push(cb);
+      }
       for (const [r0, r1] of runs) {
         if (r1 - r0 <= 0) continue;
         // which world side of these blocks faces the spine corridor
