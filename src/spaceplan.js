@@ -155,21 +155,38 @@
   function serve(q, side, servedBy, p, depthLevel, localRoutes, parcels, diag, key) {
     if(qArea(q)<0.1)return;
     const F=frame(q,side),U=F.U,V=F.V,cw=p.localWidth;
-    const canAdd=depthLevel<p.maxServeDepth&&localRoutes.length<p.maxLocalRoutes&&
-      V>p.maxDepth*1.08&&V>p.minDepth*2+cw&&U>=p.minFrontage*1.8;
-    if(!canAdd){parcelize(q,side,servedBy,p,depthLevel,'circulation',parcels,diag);return;}
-    // Put the next local hall no farther than maxDepth from the serving edge.
-    // Recurse only on the mass behind it; complexity is hard-capped above.
-    const d=clamp(Math.min(p.maxDepth,V/2-cw/2),p.minDepth,Math.max(p.minDepth,V-cw-p.minDepth));
-    const cq=F.rect(0,d,U,d+cw),id=key+'|local|'+localRoutes.length;
-    const lr=localRoute(cq,id,'local','catchment');localRoutes.push(lr);diag.localRoutes++;
-    const front=F.rect(0,0,U,d),back=F.rect(0,d+cw,U,V);
-    parcelize(front,side,servedBy,p,depthLevel,'circulation',parcels,diag);
-    serve(back,side,id,p,depthLevel+1,localRoutes,parcels,diag,key);
+    const deep=V>p.maxDepth*1.08;
+    const geometry=V>p.minDepth+cw&&U>=2*p.minFrontage+cw;
+    const canAdd=deep&&geometry&&depthLevel<p.maxServeDepth&&localRoutes.length<p.maxLocalRoutes;
+    if(!canAdd){
+      if(deep&&(depthLevel>=p.maxServeDepth||localRoutes.length>=p.maxLocalRoutes))diag.capHit=true;
+      parcelize(q,side,servedBy,p,depthLevel,'circulation',parcels,diag);return;
+    }
+
+    // A deep catchment receives a perpendicular branch starting on the
+    // circulation edge that serves it. This makes local circulation a tree:
+    // every derived hall physically touches its parent instead of creating
+    // disconnected parallel hallways behind rows of rooms.
+    let u=Math.round(U/2);
+    u=clamp(u,p.minFrontage+cw/2,U-p.minFrontage-cw/2);
+    const u0=u-cw/2,u1=u+cw/2,cq=F.rect(u0,0,u1,V),id=key+'|local|'+localRoutes.length;
+    localRoutes.push(localRoute(cq,id,'local','catchment'));diag.localRoutes++;
+
+    const a=F.rect(0,0,u0,V),b=F.rect(u1,0,U,V);
+    // Canonical u runs left-to-right for top/bottom access and top-to-bottom
+    // for left/right access. Use the side that actually touches the branch.
+    const sideA=(side==='top'||side==='bottom')?'right':'bottom';
+    const sideB=(side==='top'||side==='bottom')?'left':'top';
+    if(qArea(a)>0.1)serve(a,sideA,id,p,depthLevel+1,localRoutes,parcels,diag,key);
+    if(qArea(b)>0.1)serve(b,sideB,id,p,depthLevel+1,localRoutes,parcels,diag,key);
   }
 
   function fallbackServe(q,p,dna,key,localRoutes,parcels,diag) {
     const w=q[2]-q[0],h=q[3]-q[1],cw=p.localWidth;
+    if(localRoutes.length>=p.maxLocalRoutes){
+      diag.capHit=true;diag.unserved++;
+      parcelize(q,w>=h?'top':'left',null,p,0,'unserved',parcels,diag);return;
+    }
     if(Math.min(w,h)<cw+p.minDepth*1.4||qArea(q)<p.minFrontage*p.minDepth*2){
       const side=w>=h?'top':'left';parcelize(q,side,null,p,0,'unserved',parcels,diag);diag.unserved++;return;
     }
