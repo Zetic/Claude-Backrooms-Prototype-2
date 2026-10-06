@@ -617,6 +617,33 @@
       b.z = I.zones.length;
       I.zones.push(Z);
     });
+    // A single unstructured zone that owns an entire territory must expose
+    // at least one physically doorable/open edge. Some perfectly valid local
+    // shapes (round rooms/theatres, dense solids) can otherwise land inside a
+    // territory whose actual neighbour contacts touch only blocked corners.
+    // Reject that realization generically instead of letting the world graph
+    // contain an architecturally sealed island.
+    if (!structure.plan && blocks.length===1 && blocks[0].k===BLOCK && !BR.isPocket(area)) {
+      const b=blocks[0],Z=I.zones[b.z],access=()=>{
+        for(const n of W.adj(T))for(const sg of n.segs){
+          const sign=sg.side===1||sg.side===3?-1:1;
+          for(const d of [0.6,1.4,2.2])for(let t=sg.s0+0.5;t<=sg.s1-0.5+1e-9;t+=0.75){
+            const x=sg.o==='h'?t:sg.c+sign*d,y=sg.o==='h'?sg.c+sign*d:t;
+            if(Z.doorRoomAt(x,y)>=0)return true;
+          }
+        }
+        return false;
+      };
+      if(!access()){
+        const q=[b.x0,b.y0,b.x1,b.y1],rr=new Rng(hash4(W.seed,T.i,T.j,T.k*64+S.LMK+0x33));
+        let F=BR.fillZone('open',q,rr,st,{});
+        I.zones[b.z]=F;
+        if(!access())I.zones[b.z]=BR.plainZone(q,'hall');
+        I.landmarkFallback=I.landmark||I.zones[b.z].type;
+        I.landmark=null;
+      }
+    }
+
     let base = 0;
     for (const Z of I.zones) { Z.base = base; base += Z.rooms.length; }
     connect(I, rng, st);
