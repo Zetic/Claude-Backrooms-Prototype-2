@@ -8,9 +8,9 @@
  *   - how far from the origin the region is.
  * Structure
  *   - territories tile the plane exactly (no gaps, no overlaps),
- *   - pair rules hold: forbidden pairs never touch without a band or a
- *     thick wall and never get a normal door; pockets sit fully inside one
- *     host area and have a front door,
+ *   - mixed-area transitions never inject maintenance bands; former band
+ *     pairs use direct strong transition walls; pockets remain independent
+ *     Maintenance/Home territories with normal front-door logic,
  *   - district structure plans are connected and deterministic,
  *   - route obligations are explicitly realized/adapted/failed,
  *   - structural continuations remove only their seam interval,
@@ -41,8 +41,15 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
       structure: it.structureKey || null,
       obligations: (it.obligations || []).map((o) => [o.routeId,o.hierarchy,o.axis,r6(o.line),r6(o.s0),r6(o.s1),r6(o.width)]),
       realizations: (it.realizations || []).map((r) => [r.routeId,r.status,r.reason,r6(r.shift),r.rects.map((q)=>q.map(r6))]),
+      space: (it.spacePlan && it.spacePlan.parts || []).map((p) => ({
+        key:p.key,
+        local:(p.localRoutes||[]).map((r)=>[r.routeId,r.q.map(r6)]),
+        parcels:(p.parcels||[]).map((x)=>[x.q.map(r6),x.meta.frontSide,x.meta.access,x.meta.role,
+          r6(x.meta.frontage),r6(x.meta.depth),x.meta.violations.slice()])
+      })),
       blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type,
-        (b.flows || (b.flow ? [b.flow] : [])).map((f) => f.key).sort()]),
+        (b.flows || (b.flow ? [b.flow] : [])).map((f) => f.key).sort(),
+        b.space ? [b.space.frontSide,b.space.access,b.space.role,r6(b.space.frontage),r6(b.space.depth),b.space.violations.slice()] : null]),
       rooms: it.rooms.map((r) => r.kind + ':' + r.rects.map((q) => q.map(r6).join(',')).join('/')),
       links: it.links.map((l) => [l.a, l.b, r6(l.x), r6(l.y), r6(l.w), l.kind]),
       geo: ['walls', 'minor', 'hatch', 'masses', 'voids', 'pools', 'props', 'rounds', 'pillars'].map((k) => it[k].map(r6))
@@ -187,6 +194,38 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   check('route adaptation is exercised and explicit', adapted > 0 && failed >= 0, `${adapted} adapted, ${failed} failed`);
   check('planned anchors become local special spaces', anchorObs > 0 && anchorAttached / anchorObs > 0.8, `${anchorAttached}/${anchorObs} attached`);
 
+  // ------------------------------------------------ local space planning
+  const denseTypes=new Set(['guest','office','stalls','warren','corridorRooms','house']);
+  let plannedTerr=0,spaceParcels=0,localHalls=0,supportParcels=0,badParcel=0,badDense=0,guests=0,badGuests=0,capViolations=0;
+  for(const T of terrs){
+    const a=W.final(T); if(a!=='offices'&&a!=='hotel')continue;
+    const I=W.interior(T); if(!I.structureKey)continue; plannedTerr++;
+    const SP=I.spacePlan;
+    spaceParcels+=SP.diagnostics.parcels;localHalls+=SP.diagnostics.localRoutes;supportParcels+=SP.diagnostics.support;
+    for(const part of SP.parts){
+      if(part.parcels.length>64||part.localRoutes.length>4)capViolations++;
+      for(const p of part.parcels){
+        const m=p.meta;
+        if(m.role==='occupiable'&&m.violations.length)badParcel++;
+      }
+    }
+    for(const b of I.blocks){
+      if(b.z<0)continue;const type=I.zones[b.z].type,m=b.space;
+      if(m&&m.access==='unserved'&&denseTypes.has(type))badDense++;
+      if(type==='guest'){
+        guests++;
+        const U=Math.max(b.x1-b.x0,b.y1-b.y0),V=Math.min(b.x1-b.x0,b.y1-b.y0);
+        if(!m||!BR.spaceTypeCompatible('hotel','guest',m,U,V))badGuests++;
+      }
+    }
+  }
+  check('local space planner subdivides structured floor', plannedTerr>100&&spaceParcels>1000&&localHalls>100,
+    `${plannedTerr} territories, ${spaceParcels} parcels, ${localHalls} local halls`);
+  check('local planning respects hard complexity caps', capViolations===0, `${capViolations} cap violations`);
+  check('occupiable parcels satisfy geometry/access constraints', badParcel===0, `${badParcel} invalid occupiable parcels; ${supportParcels} support parcels`);
+  check('unserved floor never receives dense cellular archetypes', badDense===0, `${badDense} dense unserved blocks`);
+  check('guest archetype cannot stretch outside its parcel envelope', guests>100&&badGuests===0, `${guests} guest blocks, ${badGuests} invalid`);
+
   // Boundary reconciliation must preserve realized route identity, remove the
   // seam wall only across that route, and never add a redundant normal door.
   const wallHits = (B,c) => {
@@ -250,7 +289,8 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   const W = new BR.World(SEED), X = 900;
   const it = W.collect(-X, -X, X, X, Infinity, { interiors: true });
   const inner = (T) => T.bbox[0] > -X + 60 && T.bbox[1] > -X + 60 && T.bbox[2] < X - 60 && T.bbox[3] < X - 60;
-  let forbidden = 0, badForbidden = [], bandLeaks = 0, pockets = 0, badPockets = [], seenPairs = new Set();
+  const formerBands=new Set(['offices|poolrooms','parking|poolrooms','hotel|parking']);
+  let transitions=0,badTransitions=[],insertedBands=0,pockets=0,badPockets=[],seenPairs=new Set();
   for (const T of it.territories) {
     if (!inner(T)) continue;
     const fa = W.final(T);
@@ -259,20 +299,13 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       if (seenPairs.has(k)) continue;
       seenPairs.add(k);
       const fb = W.final(n.U), info = BR.pairInfo(W, T, n.U);
-      if (BR.isPocket(fa) || BR.isPocket(fb) || BR.rule(fa, fb) !== 'band') continue;
-      forbidden++;
-      const b = W.boundary(T, n.U);
-      const ok = info.mode === 'never' && (info.band || info.wall === 'thick') && b.doors.every((d) => d.kind === 'service');
-      if (!ok) badForbidden.push(k);
-      // with a band, the owner's side of the line is maintenance floor (or solid)
-      if (info.band) {
-        const O = W.terr(info.band.owner), IO = W.interior(O), segs = info.band.owner === T.key ? n.segs : W.adj(n.U).find((m) => m.U.key === T.key).segs;
-        for (const s of segs) for (let t = s.s0 + 0.5; t < s.s1 - 0.5; t += 1) {
-          const sg = s.side === 1 || s.side === 3 ? -1 : 1, d = 0.6 * sg;
-          const p = s.o === 'h' ? [t, s.c + d] : [s.c + d, t];
-          const r = BR.interiorRoomAt(IO, p[0], p[1]);
-          if (r >= 0 && IO.rooms[r].kind !== 'service') bandLeaks++;
-        }
+      insertedBands += BR.carveBands(W,T).strips.length;
+      const pairName=fa<fb?fa+'|'+fb:fb+'|'+fa;
+      if(!BR.isPocket(fa)&&!BR.isPocket(fb)&&formerBands.has(pairName)){
+        transitions++;
+        const b=W.boundary(T,n.U);
+        if(BR.rule(fa,fb)==='band'||info.band||info.service||info.wall!=='thick'||b.semantic!=='transition'||b.doors.some((d)=>d.kind==='service'))
+          badTransitions.push(k);
       }
     }
     if (BR.isPocket(fa)) {
@@ -283,8 +316,9 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       if (!allHost || doors < 1) badPockets.push(T.key + (allHost ? ' no door' : ' crosses areas'));
     }
   }
-  check('forbidden pairs: band or thick wall, no normal door', badForbidden.length === 0, `${forbidden} pairs` + (badForbidden.length ? ', bad: ' + badForbidden.slice(0, 4).join(' ') : ''));
-  check('bands are maintenance floor along the whole line', bandLeaks === 0, `${bandLeaks} leaks`);
+  check('former maintenance-band pairs use direct strong transitions', transitions>0&&badTransitions.length===0,
+    `${transitions} pairs`+(badTransitions.length?', bad: '+badTransitions.slice(0,4).join(' '):''));
+  check('no automatic maintenance strips are inserted', insertedBands===0, `${insertedBands} strips`);
   check('pockets sit inside one host and have a door', badPockets.length === 0, `${pockets} pockets` + (badPockets.length ? ', bad: ' + badPockets.slice(0, 4).join(' ') : ''));
   check('no door failures', W.stats.doorFailures === 0, `${W.stats.doorFailures}`);
 
