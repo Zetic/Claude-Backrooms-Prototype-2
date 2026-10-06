@@ -4,8 +4,7 @@
  * Every territory belongs to exactly one AREA. Areas have a ROLE:
  *   base     - Backrooms: fills everything nothing else claims
  *   district - Offices, Hotel, Poolrooms, Parking: large compact regions
- *   pocket   - Home, Maintenance rooms: one territory, fully inside one host
- *   network  - Maintenance: thin service bands carved along boundaries
+ *   pocket   - Home, Maintenance: one territory, fully inside one host
  *
  * Districts come from a deterministic field: seeds on a coarse jittered
  * lattice, each a warped box/ellipse blend. A point's area is the district
@@ -79,7 +78,7 @@
       roomScale: [0.9, 1.1], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.1]
     },
     maintenance: {
-      name: 'Maintenance', role: 'network', color: '#b5b2a8',
+      name: 'Maintenance', role: 'pocket', color: '#b5b2a8',
       pocket: { hosts: ['backrooms', 'parking', 'poolrooms'], p: 0.025, minDim: 12, maxDim: 40, salt: 62 },
       style: 'utility',
       roomScale: [0.7, 0.9], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.05]
