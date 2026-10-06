@@ -8,11 +8,16 @@
   const BR = root.BR;
   const { Rng, hash4 } = BR;
   const S = { PLAN: 0x5a71 };
-  const PLANNED = new Set(['offices', 'hotel']);
+  // Any district-role semantic area can use the same structure pipeline.
+  // Area definitions tune manifestation/program weights; structure code does
+  // not branch on semantic names.
+  const PLANNED = new Set(Object.keys(BR.AREAS).filter((k) => BR.AREAS[k].role === 'district'));
   const PRI = { major: 0, secondary: 1, service: 2 };
 
   function lineCandidates(dna, d) {
-    const bx = [d.cx - d.rx * 0.9, d.cx + d.rx * 0.9], by = [d.cy - d.ry * 0.9, d.cy + d.ry * 0.9], out = [];
+    const B=d.bounds||[d.cx-d.rx,d.cy-d.ry,d.cx+d.rx,d.cy+d.ry];
+    const ix=Math.min(12,(B[2]-B[0])*.05),iy=Math.min(12,(B[3]-B[1])*.05);
+    const bx=[B[0]+ix,B[2]-ix],by=[B[1]+iy,B[3]-iy],out=[];
     const add = (axis, spacing, phase, lo, hi, s0, s1, kind) => {
       for (let k = Math.ceil((lo - phase) / spacing); k <= Math.floor((hi - phase) / spacing); k++)
         out.push({ id: dna.key + '|candidate|' + kind + '|' + axis + '|' + (phase + k * spacing),
@@ -48,7 +53,10 @@
     const ij = district.split(','), a = +ij[0], b = +ij[1], d = BR.districtSeed(W.seed, a, b);
     if (!d.exists || d.type !== area) return null;
     const dna = BR.architectureDNA(W, { district, cx: d.cx, cy: d.cy, base: area }, area);
-    const C = lineCandidates(dna, d), rng = new Rng(hash4(W.seed, a, b, S.PLAN ^ (area === 'hotel' ? 0x911 : 0x622)));
+    const program = W.programBy ? W.programBy(area, district) : BR.buildManifestationProgram(W, area, district);
+    if (!program) return null;
+    const areaId=Math.max(1,BR.AREA_ORDER.indexOf(area)+1);
+    const C = lineCandidates(dna, d), rng = new Rng(hash4(W.seed, a, b, S.PLAN ^ Math.imul(areaId,0x9e37)));
     const majors = nearest(C.lines.filter((x) => x.kind === 'spine'), dna.majorAxis === 'x' ? d.cy : d.cx);
     const crosses = nearest(C.lines.filter((x) => x.kind === 'cross'), dna.majorAxis === 'x' ? d.cx : d.cy);
     const key = 'structure:' + area + ':' + district, routes = [];
@@ -64,19 +72,31 @@
 
     let wing = null;
     const sideMajors = majors.filter((m) => m.line !== trunkLine);
-    if (perp1 - perp0 > dna.spineSpacing * 2.6 && sideMajors.length) {
-      const m = nearest(sideMajors, centerPerp + (rng.f() < 0.5 ? -dna.spineSpacing : dna.spineSpacing))[0];
+    const perpTargets=program.regions.filter((r)=>r.role==='branch'||r.role==='repeating'||r.role==='open')
+      .map((r)=>dna.majorAxis==='x'?r.y:r.x);
+    if (perp1 - perp0 > dna.spineSpacing * 2.25 && sideMajors.length && d.form !== 'fragmented') {
+      const target=perpTargets.length?perpTargets[Math.floor(perpTargets.length/2)]:centerPerp+(rng.f()<.5?-dna.spineSpacing:dna.spineSpacing);
+      const m = nearest(sideMajors, target)[0];
       const inset = (along1 - along0) * rng.range(0.10, 0.20);
       wing = route(key, rn++, 'major', dna.majorAxis, m.line, along0 + inset, along1 - inset, dna.corridorWidth, 'wing');
       routes.push(wing);
     }
 
     const usable = crosses.filter((c) => c.line > along0 + 12 && c.line < along1 - 12);
-    const want = Math.min(4, Math.max(2, Math.round((along1 - along0) / Math.max(85, dna.crossSpacing * 1.8))));
+    const scaleMul={small:.65,medium:1,large:1.25,regional:1.5}[d.scale]||1;
+    const baseWant=Math.max(1,Math.round((along1-along0)/Math.max(85,dna.crossSpacing*1.8)));
+    const want=Math.min(5,Math.max(1,Math.round(baseWant*program.routeDensity*scaleMul)));
     const selected = [];
+    const alongTargets=program.regions.filter((r)=>r.role!=='void'&&r.role!=='service')
+      .map((r)=>dna.majorAxis==='x'?r.x:r.y);
+    for(const target of alongTargets){
+      const c=nearest(usable,target).find((q)=>!selected.some((p)=>Math.abs(p.line-q.line)<Math.max(18,dna.crossSpacing*.6)));
+      if(c)selected.push(c);
+      if(selected.length>=want)break;
+    }
     for (const c of nearest(usable, centerAlong)) {
       if (selected.length >= want) break;
-      if (selected.some((q) => Math.abs(q.line - c.line) < Math.max(20, dna.crossSpacing * 0.7))) continue;
+      if (selected.some((q) => Math.abs(q.line - c.line) < Math.max(18, dna.crossSpacing * 0.6))) continue;
       selected.push(c);
     }
     if (!selected.length && crosses.length) selected.push(crosses[0]);
@@ -91,7 +111,8 @@
       routes.push(route(key, rn++, 'secondary', axis, c.line, a0, a1, dna.corridorWidth, role));
     }
 
-    if (selected.length && (perp1 - perp0) > 45) {
+    const hasService=program.regions.some((r)=>r.role==='service');
+    if (selected.length && (perp1 - perp0) > 45 && (hasService || program.routeDensity > 0.8)) {
       const side = (hash4(W.seed, a, b, 0x51ce) & 1) ? 1 : -1;
       let serviceLine = trunkLine + side * (dna.corridorWidth + dna.module * rng.int(2, 3));
       serviceLine = Math.max(perp0 + 4, Math.min(perp1 - 4, serviceLine));
@@ -114,19 +135,22 @@
         nodes.push({ x: p[0], y: p[1], kind: 'terminus', routes: [R.id] });
     }
 
-    const anchors = [], junctions = nodes.filter((n) => n.kind === 'junction');
-    const central = junctions.slice().sort((u, v) =>
-      (u.x-d.cx)**2 + (u.y-d.cy)**2 - ((v.x-d.cx)**2 + (v.y-d.cy)**2))[0];
-    if (central) anchors.push({ id:key+'|anchor|0', x:central.x, y:central.y,
-      kind:area==='hotel'?'lobby':'atrium', zone:area==='hotel'?'open':'courtyard' });
-    const terms = nodes.filter((n) => n.kind === 'terminus').sort((u,v) =>
-      ((v.x-d.cx)**2+(v.y-d.cy)**2)-((u.x-d.cx)**2+(u.y-d.cy)**2));
-    if (terms[0]) anchors.push({ id:key+'|anchor|1', x:terms[0].x, y:terms[0].y,
-      kind:area==='hotel'?'ballroom':'open-workspace', zone:area==='hotel'?'gallery':'open' });
-    if (area==='hotel' && terms[1] && rng.f()<0.6) anchors.push({ id:key+'|anchor|2', x:terms[1].x, y:terms[1].y,
-      kind:'courtyard', zone:'courtyard' });
+    // Structural-region roles are semantic-neutral. A role becomes a concrete
+    // zone through the area's normal zone catalogue and generic role biases.
+    const anchors=[];
+    const ranked=program.regions.filter((r)=>['core','open','landmark','terminal','void'].includes(r.role))
+      .sort((u,v)=>{
+        const p={core:0,landmark:1,open:2,terminal:3,void:4};
+        return (p[u.role]-p[v.role])||((u.id<v.id)?-1:1);
+      });
+    const anchorLimit=d.scale==='small'?1:d.scale==='medium'?2:3;
+    for(const R of ranked.slice(0,anchorLimit)){
+      anchors.push({id:key+'|anchor|'+anchors.length,x:R.x,y:R.y,kind:R.role,
+        zone:BR.programPreferredZone(area,R.role),programRegion:R.id});
+    }
 
-    return { key, area, district, dnaKey:dna.key, dna, districtSeed:d, bounds:C.bounds, candidates:C.lines, routes, nodes, anchors };
+    return { key, area, district, manifestation:d, programKey:program.key, program,
+      dnaKey:dna.key, dna, districtSeed:d, bounds:C.bounds, candidates:C.lines, routes, nodes, anchors };
   }
 
   function routePiece(R, q, ri) {
