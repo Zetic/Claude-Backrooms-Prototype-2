@@ -258,7 +258,8 @@
   // ---------------------------------------------------- generation debugger
   function drawGenerationDebug(ctx, W, view, opts) {
     const any = opts.dnaDebug || opts.candidateRoutes || opts.selectedRoutes || opts.structureNodes ||
-      opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures;
+      opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures ||
+      opts.spaceParcels || opts.spaceAccess || opts.localCirculation || opts.spaceViolations;
     if (!any) return;
     const { cx, cy, zoom, w, h, dpr } = view, hw=w/2/zoom, hh=h/2/zoom;
     const X=(x)=>(x-cx)*zoom+w/2, Y=(y)=>(y-cy)*zoom+h/2;
@@ -338,6 +339,34 @@
         }
       }
       ctx.setLineDash([]);
+    }
+    if(opts.spaceParcels||opts.spaceAccess||opts.localCirculation||opts.spaceViolations){
+      for(const T of terrs){
+        const I=W.interiors.get(T.key);if(!I||!I.spacePlan)continue;
+        if(opts.localCirculation){
+          ctx.setLineDash([6,3]);ctx.lineWidth=2.5;ctx.strokeStyle='rgba(190,110,255,.95)';
+          for(const R of I.spacePlan.localRoutes||[])rect(R.q);
+          ctx.setLineDash([]);
+        }
+        for(const p of I.spacePlan.parcels||[]){
+          const q=p.q,m=p.meta||{},cxp=(q[0]+q[2])/2,cyp=(q[1]+q[3])/2;
+          if(opts.spaceParcels){
+            ctx.lineWidth=1.2;ctx.setLineDash(m.role==='support'?[3,2]:[]);
+            ctx.strokeStyle=m.role==='support'?'rgba(255,190,90,.9)':'rgba(130,255,205,.82)';rect(q);ctx.setLineDash([]);
+          }
+          if(opts.spaceAccess&&m.frontSide){
+            let tx=cxp,ty=cyp;
+            if(m.frontSide==='x0')tx=q[0];else if(m.frontSide==='x1')tx=q[2];
+            else if(m.frontSide==='y0')ty=q[1];else if(m.frontSide==='y1')ty=q[3];
+            ctx.strokeStyle='rgba(90,210,255,.85)';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(X(cxp),Y(cyp));ctx.lineTo(X(tx),Y(ty));ctx.stroke();
+          }
+          if(opts.spaceViolations&&m.violations&&m.violations.length){
+            const x=X(cxp),y=Y(cyp);ctx.strokeStyle='rgba(255,65,65,.98)';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(x-4,y-4);ctx.lineTo(x+4,y+4);ctx.moveTo(x+4,y-4);ctx.lineTo(x-4,y+4);ctx.stroke();
+            if(zoom>=1.4){ctx.fillStyle='rgba(255,175,175,.98)';ctx.font='10px ui-monospace, monospace';ctx.fillText(m.violations.join(','),x+6,y-5);}
+          }
+        }
+      }
     }
     if(opts.continuations){
       const seen=new Set();ctx.lineWidth=5;ctx.strokeStyle='rgba(80,255,120,.98)';
