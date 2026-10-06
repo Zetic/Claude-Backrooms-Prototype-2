@@ -89,6 +89,11 @@ language and a set of recurring circulation lines.
 Hover inspection shows the DNA key, preferred axis, corridor width and module
 size for the territory under the pointer.
 
+DNA-aligned Office and Hotel spines/cross-corridors also carry an explicit
+circulation contract: DNA identity, corridor kind, axis, world-coordinate line
+and width. A contract is attached only when the shared DNA lattice actually
+fit; local fallback corridors are deliberately left uncontracted.
+
 ### 3. Pair rules: how areas meet (areas.js, layout.js)
 
 Every pair of touching territories looks up `rule(areaA, areaB)`:
@@ -154,10 +159,20 @@ For each territory:
 
 ### 5. Boundaries (boundary.js)
 
-Each shared wall is built once from the pair's rule and both interiors. Doors
-are probed on both sides; spots on corridors, halls and aisles are preferred,
-so circulation lines up across territories. Open boundaries have no wall, and
-every pair of rooms facing across them is linked.
+Each shared wall is built once from the pair's rule and both interiors. Before
+ordinary door placement, matching circulation contracts are reconciled. If the
+same DNA spine or cross-corridor reaches the same shared edge from both sides,
+that exact corridor-width interval is removed from the territory wall and
+linked directly as a `continuation`. The rest of the shared edge remains a
+normal wall, so only the architectural feature crosses the technical seam.
+Accidental corridor overlaps do not qualify: the stable circulation contract
+must match on both sides. A continuation also satisfies the pair's connectivity
+need, so a redundant normal seam door is not added.
+
+For boundaries without a continuation, doors are probed on both sides; spots on
+corridors, halls and aisles are preferred, so circulation lines up across
+territories. Open boundaries have no wall, and every pair of rooms facing
+across them is linked.
 
 ### The room graph
 
@@ -197,7 +212,7 @@ W.territoriesIn(x0, y0, x1, y1)                // plan only (cheap)
 W.final(T)                                     // area name of territory T
 W.interior(T)                                  // -> { blocks, zones, rooms: [{rects, kind, zone}], links,
                                                //      walls, minor, masses, voids, pools, props, pillars, ... }
-W.boundary(A, B)                               // -> { wall, walls, doors: [{x, y, w, o, kind}], links }
+W.boundary(A, B)                               // -> { wall, walls, doors, continuations, links }
 W.inspect(x, y)                                // area / territory / zone / room at a point
 BR.pairInfo(W, A, B)                           // the rule decision for a pair
 BR.roomGraph(W, items)                         // walkable graph
@@ -241,6 +256,7 @@ The suite also checks that different seeds give different maps.
 - Bands are maintenance floor along their whole length.
 - Pockets sit inside one host and have a door.
 - No door placement fails.
+- Matching DNA corridors cross territory seams without a wall or redundant door.
 - Every room is reachable.
 
 All checks pass for seeds 31337, 7, 12345, 99 and 4242.
