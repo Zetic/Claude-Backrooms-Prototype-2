@@ -116,6 +116,31 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   }
   const signatures = new Set(distinct.map((d) => [d.majorAxis, d.corridorWidth, d.module, d.spineSpacing, d.spinePhase, d.crossSpacing, d.crossPhase].join(':')));
   check('different districts can have different architecture DNA', distinct.length >= 2 && signatures.size >= 2, `${distinct.length} districts, ${signatures.size} DNA signatures`);
+
+  // Offices and Hotel consume the DNA spatially. Their primary corridor blocks
+  // keep the district corridor width, and when a shared lattice line fits the
+  // territory it lands on the same world-coordinate phase as its neighbours.
+  let primary = 0, aligned = 0, badWidth = 0;
+  outer: for (const T of terrs) {
+    const a = W.final(T);
+    if (a !== 'offices' && a !== 'hotel') continue;
+    const D = W.architecture(T), I = W.interior(T);
+    for (const b of I.blocks) {
+      if (b.k !== BR.BLOCK_KIND.HALL) continue;
+      const w = b.x1 - b.x0, h = b.y1 - b.y0;
+      const isPrimary = D.majorAxis === 'x' ? w > h : h > w;
+      if (!isPrimary) continue;
+      primary++;
+      const width = D.majorAxis === 'x' ? h : w;
+      if (width !== D.corridorWidth) badWidth++;
+      const start = D.majorAxis === 'x' ? b.y0 : b.x0;
+      const mod = ((start - D.spinePhase) % D.spineSpacing + D.spineSpacing) % D.spineSpacing;
+      if (mod === 0 && width === D.corridorWidth) aligned++;
+      if (primary >= 400) break outer;
+    }
+  }
+  check('office/hotel corridors inherit DNA width', primary >= 100 && badWidth === 0, `${primary} corridors, ${badWidth} wrong width`);
+  check('office/hotel corridors use shared DNA lattice', primary >= 100 && aligned / primary > 0.3, `${aligned}/${primary} aligned`);
 }
 
 // ------------------------------------------------------------ tiling
