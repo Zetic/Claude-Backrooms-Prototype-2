@@ -290,7 +290,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   const it = W.collect(-X, -X, X, X, Infinity, { interiors: true });
   const inner = (T) => T.bbox[0] > -X + 60 && T.bbox[1] > -X + 60 && T.bbox[2] < X - 60 && T.bbox[3] < X - 60;
   const formerBands=new Set(['offices|poolrooms','parking|poolrooms','hotel|parking']);
-  let transitions=0,badTransitions=[],insertedBands=0,pockets=0,badPockets=[],seenPairs=new Set();
+  let transitions=0,badTransitions=[],legacyBandFlags=0,pockets=0,badPockets=[],seenPairs=new Set();
   for (const T of it.territories) {
     if (!inner(T)) continue;
     const fa = W.final(T);
@@ -299,7 +299,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       if (seenPairs.has(k)) continue;
       seenPairs.add(k);
       const fb = W.final(n.U), info = BR.pairInfo(W, T, n.U);
-      insertedBands += BR.carveBands(W,T).strips.length;
+      if(Object.prototype.hasOwnProperty.call(info,'band')||Object.prototype.hasOwnProperty.call(info,'service')) legacyBandFlags++;
       const pairName=fa<fb?fa+'|'+fb:fb+'|'+fa;
       if(!BR.isPocket(fa)&&!BR.isPocket(fb)&&formerBands.has(pairName)){
         transitions++;
@@ -318,7 +318,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   }
   check('former maintenance-band pairs use direct strong transitions', transitions>0&&badTransitions.length===0,
     `${transitions} pairs`+(badTransitions.length?', bad: '+badTransitions.slice(0,4).join(' '):''));
-  check('no automatic maintenance strips are inserted', insertedBands===0, `${insertedBands} strips`);
+  check('maintenance-band machinery is absent from pair decisions', legacyBandFlags===0 && !BR.bands && !BR.carveBands, `${legacyBandFlags} legacy pair flags`);
   check('pockets sit inside one host and have a door', badPockets.length === 0, `${pockets} pockets` + (badPockets.length ? ', bad: ' + badPockets.slice(0, 4).join(' ') : ''));
   check('no door failures', W.stats.doorFailures === 0, `${W.stats.doorFailures}`);
 
