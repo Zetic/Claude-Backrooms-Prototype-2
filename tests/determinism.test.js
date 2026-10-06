@@ -80,7 +80,7 @@ const base = snapshot(new BR.World(SEED), ...R);
   check('visit order does not matter', snapshot(W, ...R) === base);
 }
 {
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, programs: 2, structures: 2 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, manifests: 4, dna: 4, programs: 2, structures: 2 } });
   check('cache eviction does not matter', snapshot(W, ...R) === base);
 }
 check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], R[2], R[3], true) === base);
@@ -95,7 +95,7 @@ check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], 
 {
   const F = [1e6 - 120, -1e6 - 90, 1e6 + 120, -1e6 + 90];
   const a = snapshot(new BR.World(SEED), ...F);
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, programs: 2, structures: 2 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, manifests: 4, dna: 4, programs: 2, structures: 2 } });
   W.collect(0, 0, 100, 100, Infinity, { interiors: true });
   check('far from the origin (1e6 m) still deterministic', snapshot(W, ...F) === a);
 }
@@ -126,7 +126,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
     const M0=manifests[0], direct=BR.manifestationSeed(SEED,M0.a,M0.b);
     stable=JSON.stringify(direct)===JSON.stringify(M0);
     const P0=W.programBy(M0.type,M0.id);
-    const W2=new BR.World(SEED,{limits:{plans:12,interiors:8,boundaries:16,pairs:40,dna:2,programs:1,structures:1}});
+    const W2=new BR.World(SEED,{limits:{plans:12,interiors:8,boundaries:16,pairs:40,manifests:2,dna:2,programs:1,structures:1}});
     for(const M of manifests.slice(1,6))W2.programBy(M.type,M.id);
     programStable=JSON.stringify(W2.programBy(M0.type,M0.id))===JSON.stringify(P0);
   }
@@ -163,7 +163,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   if (same) {
     const ds = same.slice(0, 3).map((T) => W.architecture(T));
     shared = ds.every((d) => d.key === ds[0].key && JSON.stringify(d) === JSON.stringify(ds[0]));
-    const W2 = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 1 } });
+    const W2 = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, manifests: 2, dna: 1 } });
     stable = JSON.stringify(W2.architecture(W2.terr(same[0].key))) === JSON.stringify(ds[0]);
   }
   check('district architecture DNA persists across territories', !!same && shared);
@@ -196,7 +196,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   });
   let planStable = plans.length > 0;
   if (plans.length) {
-    const P0 = plans[0], W2 = new BR.World(SEED, { limits:{ plans:12, interiors:8, boundaries:16, pairs:40, dna:2, programs:1, structures:1 } });
+    const P0 = plans[0], W2 = new BR.World(SEED, { limits:{ plans:12, interiors:8, boundaries:16, pairs:40, manifests:2, dna:2, programs:1, structures:1 } });
     // Force unrelated structure cache churn before rebuilding the target.
     for (const P of plans.slice(1,5)) W2.structureBy(P.area,P.district);
     planStable = canonPlan(W2.structureBy(P0.area,P0.district)) === canonPlan(P0);
