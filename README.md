@@ -21,20 +21,29 @@ An infinite, deterministic 2D map of a Backrooms-style world. Open
 | Zoom | mouse wheel, pinch, `+` / `-` |
 | Area map | `M` or the toggle |
 | Overlays | Territories, Super-cells (the lattice), Room graph |
-| Inspect | hover: area, host area, territory, zone, room kind |
+| Generation stage | DNA → candidate lattice → selected structure → obligations → realized routes → boundary reconciliation |
+| Debug overlays | DNA regions, candidate/selected routes, nodes/anchors, obligations, realized routes, continuations, adaptations/failures |
+| Inspect | hover: area, DNA, structure plan, territory, zone, route realization, room kind |
 
 The URL hash keeps the seed, position, zoom and toggles
 (`#seed=31337&x=0&y=0&z=2&rooms=1`), so any view can be shared or bookmarked.
 
-## How a map is made: three nested levels
+## How a map is made
 
 ```
-Areas        what kind of place: Backrooms, Offices, Hotel, ...      areas.js
-  DNA          persistent architectural identity for a district/region areas.js
-    Territories   20-60 m ownership blocks that tile the plane          layout.js
-      Rooms         the floor plan inside each territory                 interior.js, zones.js
-Boundaries   the shared wall between two territories, with its doors  boundary.js
+Areas          what kind of place: Backrooms, Offices, Hotel, ...       areas.js
+  DNA            persistent architectural identity for a district/region areas.js
+    Structure      major/secondary/service circulation + anchors          structure.js
+      Territories   20-60 m ownership blocks that tile the plane          layout.js
+        Obligations  clipped pieces of the district structure              structure.js
+          Rooms      local realization and infill                          interior.js, zones.js
+Boundaries     reconcile shared structures and ordinary doors             boundary.js
 ```
+
+Territories are ownership/build units. They no longer decide whether a major
+Hotel/Office route exists. The district structure plan decides that first in
+world coordinates; each territory only realizes the piece crossing its owned
+rectangles.
 
 ### 1. Territories: a pinwheel tiling (layout.js)
 
@@ -89,12 +98,45 @@ language and a set of recurring circulation lines.
 Hover inspection shows the DNA key, preferred axis, corridor width and module
 size for the territory under the pointer.
 
-DNA-aligned Office and Hotel spines/cross-corridors also carry an explicit
-circulation contract: DNA identity, corridor kind, axis, world-coordinate line
-and width. A contract is attached only when the shared DNA lattice actually
-fit; local fallback corridors are deliberately left uncontracted.
+For Offices and Hotel, DNA now supplies the **candidate lattice**, not the
+final corridor pattern. The district structure planner selects a connected
+subset from that lattice and gives those selected routes stable identities.
 
-### 3. Pair rules: how areas meet (areas.js, layout.js)
+### 3. District structure: what actually exists (structure.js)
+
+Each Hotel/Office district deterministically creates one structure plan before
+individual interiors are generated.
+
+The plan contains:
+
+- a **major trunk** and, where the district supports it, one parallel wing;
+- **secondary branches/bridges** selected at the district level;
+- an attached **service circulation** network;
+- explicit **junction** and **terminus** nodes;
+- topology-attached special-space anchors such as Hotel lobbies/ballrooms/
+  courtyards and Office atriums/open workspaces;
+- the full DNA candidate lattice for diagnostics, even though only a sparse
+  subset is selected.
+
+The selected graph is deliberately not a complete rectangular grid. Branches
+can terminate intentionally; a dead end is a planned property of the district
+rather than the result of one territory independently deciding not to continue
+a corridor.
+
+Selected routes are clipped against territory rectangles to form
+**obligations**. Local generation records each obligation as:
+
+- `exact` — the planned line fits directly;
+- `adapted` — a deterministic local dogleg preserves the planned
+  entry/exit while moving the interior segment to a safe line;
+- `failed` — the territory cannot safely realize it; the reason is retained
+  for debugging instead of silently replacing it with unrelated architecture.
+
+Special-space anchors are applied to suitable non-circulation blocks near
+their planned topology node, so a lobby/atrium/ballroom is attached to the
+district network rather than randomly replacing a corridor-bearing territory.
+
+### 4. Pair rules: how areas meet (areas.js, layout.js)
 
 Every pair of touching territories looks up `rule(areaA, areaB)`:
 
@@ -129,19 +171,19 @@ Every pair of touching territories looks up `rule(areaA, areaB)`:
 All of these decisions are made per pair from local information only, and they
 are cached by the pair's key.
 
-### 4. Interiors (interior.js, zones.js)
+### 5. Interiors (interior.js, zones.js)
 
 For each territory:
 
 1. **Carve bands.** Remove the maintenance strips the plan assigns to this
    territory.
-2. **Block out** the rest in the area's style:
+2. **Realize planned structure, when present.** Hotel/Office territory
+   obligations are cut into corridor/service blocks first. Junctions retain
+   all overlapping route identities. Adapted routes dogleg locally while
+   preserving their planned boundary obligations. Remaining floor is infill.
+   Areas without a structure plan use their original local style:
    - *irregular* (Backrooms): one great hall, a few big rooms, or many
      smaller ones.
-   - *spine* (Offices): a corridor with suites on both sides, sometimes a
-     cross corridor.
-   - *hotel*: guest-room wings with en-suites and suites, ballrooms, garden
-     courts, lobbies.
    - *hall* (Poolrooms, Parking): a main hall plus a service strip.
    - *house* (Home): one to three houses with gardens; hallway, front and
      back rows of rooms.
@@ -157,13 +199,13 @@ For each territory:
    would otherwise be cut off, a doorway is carved through solid mass as a
    last resort.
 
-### 5. Boundaries (boundary.js)
+### 6. Boundaries (boundary.js)
 
 Each shared wall is built once from the pair's rule and both interiors. Before
-ordinary door placement, matching circulation contracts are reconciled. If the
-same DNA spine or cross-corridor reaches the same shared edge from both sides,
-that exact corridor-width interval is removed from the territory wall and
-linked directly as a `continuation`. The rest of the shared edge remains a
+ordinary door placement, matching **selected route identities** are reconciled.
+If the same district route reaches the same shared edge from both sides, that
+exact corridor-width interval is removed from the territory wall and linked
+directly as a `continuation`. The rest of the shared edge remains a
 normal wall, so only the architectural feature crosses the technical seam.
 Accidental corridor overlaps do not qualify: the stable circulation contract
 must match on both sides. A continuation also satisfies the pair's connectivity
@@ -202,6 +244,23 @@ room in a 1.8 km square is reachable.
   interior walls, so the tiling does not show. Walls between different areas
   are heavier, and thick walls are solid strips.
 
+### Generation debugger
+
+Planner diagnostics are drawn as live overlays rather than cached map tiles.
+The **Generation stage** selector exposes the calculation in order:
+
+1. DNA regions;
+2. DNA candidate circulation lattice;
+3. selected district routes plus junctions/anchors;
+4. clipped territory obligations;
+5. exact/adapted/failed local realization;
+6. boundary continuations.
+
+Individual overlays can also be combined manually. Selected route hierarchy is
+shown separately for major, secondary and service circulation. Realized
+`exact` routes and `adapted` routes have distinct outlines; failed
+obligations are marked with their failure reason at sufficient zoom.
+
 ## Data API (for a game)
 
 ```js
@@ -210,10 +269,13 @@ W.collect(x0, y0, x1, y1, budgetMs, { interiors: true })
                                                // -> { territories, interiors, boundaries, done }
 W.territoriesIn(x0, y0, x1, y1)                // plan only (cheap)
 W.final(T)                                     // area name of territory T
-W.interior(T)                                  // -> { blocks, zones, rooms: [{rects, kind, zone}], links,
-                                               //      walls, minor, masses, voids, pools, props, pillars, ... }
-W.boundary(A, B)                               // -> { wall, walls, doors, continuations, links }
-W.inspect(x, y)                                // area / territory / zone / room at a point
+W.architecture(T)                              // persistent architecture DNA
+W.structure(T)                                 // district structure plan for this territory
+W.structuresIn(x0, y0, x1, y1)                 // visible Hotel/Office structure plans
+W.interior(T)                                  // -> { obligations, realizations, anchors, blocks, zones,
+                                               //      rooms, links, walls, minor, masses, ... }
+W.boundary(A, B)                               // -> { wall, semantic, walls, doors, continuations, links }
+W.inspect(x, y)                                // area / DNA / structure / route / territory / room at a point
 BR.pairInfo(W, A, B)                           // the rule decision for a pair
 BR.roomGraph(W, items)                         // walkable graph
 ```
@@ -229,8 +291,9 @@ Geometry is in integer metres, with no rotations. Wall lists are flat
 | `areas.js` `RULES` | the pair-rule table above |
 | `areas.js` `CFG` | district lattice spacing, density, warp |
 | `layout.js` `CFG` | super-cell size, edge offsets, ear merge thresholds, service-line odds, bypass depth |
+| `structure.js` | district route selection, hierarchy, branch/service structure and special-space anchoring |
 | `zones.js` | zone generators and their size fits |
-| `render.js` | colours, LOD thresholds, tile cache size |
+| `render.js` | colours, LOD thresholds, tile cache size and planner-debug overlays |
 
 ## Tests
 
@@ -255,8 +318,13 @@ The suite also checks that different seeds give different maps.
 - Forbidden pairs always have a band or a thick wall, and no normal doors.
 - Bands are maintenance floor along their whole length.
 - Pockets sit inside one host and have a door.
+- District structure plans remain deterministic through aggressive cache eviction.
+- Every sampled district route plan is one connected route graph.
+- Major, secondary and service circulation are all generated.
+- Territory route obligations are explicitly exact, adapted or failed.
+- Planned special-space anchors are realized against local architecture.
+- Selected routes cross technical territory seams without a wall or redundant door.
 - No door placement fails.
-- Matching DNA corridors cross territory seams without a wall or redundant door.
 - Every room is reachable.
 
 All checks pass for seeds 31337, 7, 12345, 99 and 4242.
@@ -269,6 +337,13 @@ All checks pass for seeds 31337, 7, 12345, 99 and 4242.
   is the part this prototype is about.
 - Rooms are axis-aligned. Rotated wings from v1 were dropped, because
   integer-metre geometry keeps the tiling and door probing exact.
+- District structure planning currently applies to **Hotel and Offices**.
+  Poolrooms and Parking still use local hall generators; their future
+  cross-territory DNA should control pool/walkway and parking/aisle structures
+  rather than reusing the Hotel/Office corridor grammar.
+- Failed route obligations are retained and visible in the debugger. A future
+  planner can reroute around a cluster of failures at district scope instead
+  of relying only on local dogleg adaptation.
 - No vertical connections yet. Stairs are decorative.
 - Version 1 is tagged `v1-final` in git. Its old modules `sites.js`,
   `cluster.js` and `corridors.js` are no longer used.

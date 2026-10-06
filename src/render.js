@@ -111,7 +111,7 @@
 
   /**
    * view: { cx, cy, zoom (css px per metre), w, h (css px), dpr }
-   * opts: { walls, areaMap, territories, cells, rooms, hover }
+   * opts: base map toggles plus generation-debug overlays and hover
    */
   function drawWorld(ctx, W, view, opts, budgetMs) {
     const { cx, cy, zoom, w, h, dpr } = view;
@@ -254,6 +254,106 @@
     return items;
   }
 
+
+  // ---------------------------------------------------- generation debugger
+  function drawGenerationDebug(ctx, W, view, opts) {
+    const any = opts.dnaDebug || opts.candidateRoutes || opts.selectedRoutes || opts.structureNodes ||
+      opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures;
+    if (!any) return;
+    const { cx, cy, zoom, w, h, dpr } = view, hw=w/2/zoom, hh=h/2/zoom;
+    const X=(x)=>(x-cx)*zoom+w/2, Y=(y)=>(y-cy)*zoom+h/2;
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.lineCap='round'; ctx.lineJoin='round';
+    const seg=(axis,line,s0,s1)=>{
+      ctx.beginPath();
+      if(axis==='x'){ctx.moveTo(X(s0),Y(line));ctx.lineTo(X(s1),Y(line));}
+      else{ctx.moveTo(X(line),Y(s0));ctx.lineTo(X(line),Y(s1));}
+      ctx.stroke();
+    };
+    const rect=(q)=>{ctx.strokeRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);};
+    const plans=W.structuresIn(cx-hw-80,cy-hh-80,cx+hw+80,cy+hh+80);
+
+    if(opts.dnaDebug){
+      ctx.setLineDash([7,5]);ctx.lineWidth=1.4;ctx.strokeStyle='rgba(210,120,255,.85)';
+      ctx.fillStyle='rgba(235,190,255,.95)';ctx.font='11px ui-monospace, monospace';
+      for(const P of plans){
+        rect(P.bounds);
+        if(zoom>=0.7)ctx.fillText(P.dnaKey,X(P.bounds[0])+4,Y(P.bounds[1])+13);
+      }
+      ctx.setLineDash([]);
+    }
+    if(opts.candidateRoutes){
+      ctx.setLineDash([4,5]);ctx.lineWidth=1;ctx.strokeStyle='rgba(235,235,235,.38)';
+      for(const P of plans)for(const R of P.candidates)seg(R.axis,R.line,R.s0,R.s1);
+      ctx.setLineDash([]);
+    }
+    if(opts.selectedRoutes){
+      const col={major:'rgba(255,70,210,.95)',secondary:'rgba(70,220,255,.95)',service:'rgba(255,170,55,.95)'};
+      const lw={major:3.2,secondary:2.2,service:1.8};
+      for(const P of plans)for(const R of P.routes){
+        ctx.strokeStyle=col[R.hierarchy];ctx.lineWidth=lw[R.hierarchy];ctx.setLineDash(R.hierarchy==='service'?[5,3]:[]);
+        seg(R.axis,R.line,R.s0,R.s1);
+      }
+      ctx.setLineDash([]);
+    }
+    if(opts.structureNodes){
+      for(const P of plans){
+        for(const n of P.nodes){
+          ctx.beginPath();ctx.arc(X(n.x),Y(n.y),n.kind==='junction'?4:3,0,Math.PI*2);
+          ctx.fillStyle=n.kind==='junction'?'rgba(255,255,255,.95)':'rgba(255,100,220,.95)';ctx.fill();
+        }
+        for(const a of P.anchors){
+          const x=X(a.x),y=Y(a.y);ctx.fillStyle='rgba(255,225,80,.95)';ctx.fillRect(x-5,y-5,10,10);
+          if(zoom>=1.1){ctx.fillStyle='rgba(255,245,180,.95)';ctx.font='11px ui-monospace, monospace';ctx.fillText(a.kind,x+7,y-7);}
+        }
+      }
+    }
+
+    const terrs=W.territoriesIn(cx-hw-20,cy-hh-20,cx+hw+20,cy+hh+20);
+    if(opts.obligations){
+      ctx.setLineDash([3,2]);ctx.lineWidth=2.4;ctx.strokeStyle='rgba(255,235,70,.9)';
+      for(const T of terrs){const I=W.interiors.get(T.key);if(!I)continue;for(const o of I.obligations||[])seg(o.axis,o.line,o.s0,o.s1);}
+      ctx.setLineDash([]);
+    }
+    if(opts.realizedRoutes||opts.routeFailures){
+      for(const T of terrs){
+        const I=W.interiors.get(T.key);if(!I)continue;
+        for(const R of I.realizations||[]){
+          if(R.status==='failed'){
+            if(!opts.routeFailures)continue;
+            const x=R.axis==='x'?(R.s0+R.s1)/2:R.line,y=R.axis==='x'?R.line:(R.s0+R.s1)/2,X0=X(x),Y0=Y(y);
+            ctx.strokeStyle='rgba(255,65,65,.98)';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(X0-6,Y0-6);ctx.lineTo(X0+6,Y0+6);ctx.moveTo(X0+6,Y0-6);ctx.lineTo(X0-6,Y0+6);ctx.stroke();
+            if(zoom>=1.5){ctx.fillStyle='rgba(255,170,170,.98)';ctx.font='10px ui-monospace, monospace';ctx.fillText(R.reason||'failed',X0+8,Y0-7);}
+            continue;
+          }
+          if(!opts.realizedRoutes&&!opts.routeFailures)continue;
+          if(opts.realizedRoutes){
+            ctx.strokeStyle=R.status==='adapted'?'rgba(255,185,60,.98)':'rgba(80,255,130,.9)';
+            ctx.lineWidth=R.status==='adapted'?2.6:1.8;ctx.setLineDash(R.status==='adapted'?[5,2]:[]);
+            for(const q of R.rects)rect(q);
+          }
+          if(opts.routeFailures&&R.status==='adapted'){
+            const x=R.axis==='x'?(R.s0+R.s1)/2:R.line,y=R.axis==='x'?R.line:(R.s0+R.s1)/2;
+            ctx.fillStyle='rgba(255,190,70,.98)';ctx.beginPath();ctx.arc(X(x),Y(y),4,0,Math.PI*2);ctx.fill();
+          }
+        }
+      }
+      ctx.setLineDash([]);
+    }
+    if(opts.continuations){
+      const seen=new Set();ctx.lineWidth=5;ctx.strokeStyle='rgba(80,255,120,.98)';
+      for(const T of terrs)for(const n of W.adj(T)){
+        const k=BR.pairKey(T,n.U);if(seen.has(k))continue;seen.add(k);
+        const B=W.boundaries.get(k);if(!B)continue;
+        for(const c of B.continuations||[]){
+          ctx.beginPath();
+          if(c.o==='v'){ctx.moveTo(X(c.x),Y(c.s0));ctx.lineTo(X(c.x),Y(c.s1));}
+          else{ctx.moveTo(X(c.s0),Y(c.y));ctx.lineTo(X(c.s1),Y(c.y));}
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
   // ------------------------------------------------------------ far raster
   /**
    * Very far zoom: no territories at all, just the base area field sampled
@@ -375,6 +475,10 @@
         if (ce) blit(ce.canvas, cx2 * S / 2, cy2 * S / 2, (cx2 + 1) * S / 2, (cy2 + 1) * S / 2, 0, 0, TILE, TILE);
       }
     }
+
+    // ---- per-frame generation diagnostics are deliberately not tile-cached.
+    // They expose live planner/interior/boundary state without rebuilding tiles.
+    drawGenerationDebug(ctx, W, view, opts);
 
     // ---- per frame: hover outline, area names
     const px = (p) => p / zoom;

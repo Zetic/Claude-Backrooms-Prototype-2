@@ -12,7 +12,7 @@
   'use strict';
   const BR = root.BR;
 
-  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000 };
+  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000, structures: 2000 };
   const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
 
   class World {
@@ -24,7 +24,8 @@
       this.boundaries = new Map();
       this.pairs = new Map();
       this.dna = new Map();
-      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, doorFailures: 0 };
+      this.structures = new Map();
+      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
     }
     evict(map, n) {
       const it = map.keys();
@@ -49,6 +50,33 @@
     adj(T) { return BR.adjacency(this, T); }
     final(T) { return BR.finalArea(this, T); }
     architecture(T) { return BR.architectureDNA(this, T, this.final(T)); }
+    structureBy(area, district) {
+      if (!area || !district || !BR.STRUCTURE_AREAS.has(area)) return null;
+      const k = area + ':' + district;
+      let P = this.structures.get(k);
+      if (P) { this.structures.delete(k); this.structures.set(k, P); return P; }
+      P = BR.buildDistrictStructure(this, area, district);
+      if (P) {
+        this.stats.structuresBuilt++;
+        this.structures.set(k, P);
+        if (this.structures.size > this.limits.structures) this.evict(this.structures, Math.max(1, this.limits.structures >> 2));
+      }
+      return P;
+    }
+    structure(T) { return this.structureBy(this.final(T), T.district); }
+    structuresIn(x0, y0, x1, y1) {
+      const C = BR.AREA_CFG.districtCell, out = [], seen = new Set();
+      for (let a = Math.floor(x0 / C) - 1; a <= Math.floor(x1 / C) + 1; a++)
+        for (let b = Math.floor(y0 / C) - 1; b <= Math.floor(y1 / C) + 1; b++) {
+          const d = BR.districtSeed(this.seed, a, b);
+          if (!d.exists || !BR.STRUCTURE_AREAS.has(d.type)) continue;
+          const k = d.type + ':' + d.id; if (seen.has(k)) continue; seen.add(k);
+          const P = this.structureBy(d.type, d.id);
+          if (!P || P.bounds[2] < x0 || P.bounds[0] > x1 || P.bounds[3] < y0 || P.bounds[1] > y1) continue;
+          out.push(P);
+        }
+      return out;
+    }
     color(T) {
       if (!T._rgb) T._rgb = BR.areaColor(this.seed, this.final(T), T.cx, T.cy, (T.h >>> 8) / 16777216);
       return T._rgb;
@@ -140,11 +168,15 @@
       if (!T) return null;
       const r = { territory: T, area: this.final(T), base: T.base, district: T.district };
       r.dna = this.architecture(T);
+      r.structure = this.structure(T);
       const I = this.interiors.get(T.key);
       if (I) {
         const k = BR.interiorRoomAt(I, x, y);
         if (k >= 0) { r.room = I.rooms[k]; r.roomIndex = k; }
         r.block = BR.interiorBlockAt(I, x, y);
+        r.obligations = I.obligations || [];
+        r.realizations = I.realizations || [];
+        r.anchors = I.anchors || [];
       }
       return r;
     }

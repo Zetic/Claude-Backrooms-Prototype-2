@@ -22,16 +22,17 @@
   function flowEdges(I, s) {
     const out = [];
     for (const b of I.blocks) {
-      const F = b.flow;
-      if (!F) continue;
-      if (s.o === 'v') {
-        if (F.axis !== 'x' || (b.x0 !== s.c && b.x1 !== s.c)) continue;
-        const s0 = Math.max(s.s0, b.y0), s1 = Math.min(s.s1, b.y1);
-        if (s1 - s0 > 0.05) out.push({ flow: F, s0, s1 });
-      } else {
-        if (F.axis !== 'y' || (b.y0 !== s.c && b.y1 !== s.c)) continue;
-        const s0 = Math.max(s.s0, b.x0), s1 = Math.min(s.s1, b.x1);
-        if (s1 - s0 > 0.05) out.push({ flow: F, s0, s1 });
+      const flows = b.flows || (b.flow ? [b.flow] : []);
+      for (const F of flows) {
+        if (s.o === 'v') {
+          if (F.axis !== 'x' || (b.x0 !== s.c && b.x1 !== s.c)) continue;
+          const s0 = Math.max(s.s0, b.y0), s1 = Math.min(s.s1, b.y1);
+          if (s1 - s0 > 0.05) out.push({ flow: F, s0, s1 });
+        } else {
+          if (F.axis !== 'y' || (b.y0 !== s.c && b.y1 !== s.c)) continue;
+          const s0 = Math.max(s.s0, b.x0), s1 = Math.min(s.s1, b.x1);
+          if (s1 - s0 > 0.05) out.push({ flow: F, s0, s1 });
+        }
       }
     }
     return out;
@@ -98,6 +99,7 @@
         seen.add(r[0] + ',' + r[1]);
         link(r, s, t, 'opening', 0);
       }
+      out.semantic = info.fa !== info.fb ? 'transition' : 'open';
       return out;
     }
 
@@ -176,6 +178,8 @@
       for (const g of G) { push(t, Math.max(t, g[0])); t = Math.max(t, g[1]); }
       push(t, s.s1);
     });
+    out.semantic = out.continuations.length ? 'continuation' : out.cross ? 'transition' :
+      out.doors.length ? 'doorway' : 'separation';
     return out;
   }
 

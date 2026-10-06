@@ -11,10 +11,13 @@
  *   - pair rules hold: forbidden pairs never touch without a band or a
  *     thick wall and never get a normal door; pockets sit fully inside one
  *     host area and have a front door,
+ *   - district structure plans are connected and deterministic,
+ *   - route obligations are explicitly realized/adapted/failed,
+ *   - structural continuations remove only their seam interval,
  *   - every room in a large region is reachable from every other.
  */
 const path = require('path');
-for (const f of ['core', 'areas', 'layout', 'zones', 'interior', 'boundary', 'world'])
+for (const f of ['core', 'areas', 'layout', 'structure', 'zones', 'interior', 'boundary', 'world'])
   require(path.join(__dirname, '..', 'src', f + '.js'));
 const BR = globalThis.BR;
 
@@ -35,7 +38,11 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
     const it = W.interior(T);
     P[T.key] = [T.rects, W.final(T), T.base, T.district].map(String).join(';');
     I[T.key] = JSON.stringify({
-      blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type, b.flow ? b.flow.key : null]),
+      structure: it.structureKey || null,
+      obligations: (it.obligations || []).map((o) => [o.routeId,o.hierarchy,o.axis,r6(o.line),r6(o.s0),r6(o.s1),r6(o.width)]),
+      realizations: (it.realizations || []).map((r) => [r.routeId,r.status,r.reason,r6(r.shift),r.rects.map((q)=>q.map(r6))]),
+      blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type,
+        (b.flows || (b.flow ? [b.flow] : [])).map((f) => f.key).sort()]),
       rooms: it.rooms.map((r) => r.kind + ':' + r.rects.map((q) => q.map(r6).join(',')).join('/')),
       links: it.links.map((l) => [l.a, l.b, r6(l.x), r6(l.y), r6(l.w), l.kind]),
       geo: ['walls', 'minor', 'hatch', 'masses', 'voids', 'pools', 'props', 'rounds', 'pillars'].map((k) => it[k].map(r6))
@@ -44,7 +51,8 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
       const k = BR.pairKey(T, n.U);
       if (B[k]) continue;
       const b = W.boundary(T, n.U);
-      B[k] = JSON.stringify([b.wall, b.walls.map(r6), b.doors.map((d) => [r6(d.x), r6(d.y), r6(d.w), d.o, d.kind]),
+      B[k] = JSON.stringify([b.wall, b.semantic, b.walls.map(r6), b.doors.map((d) => [r6(d.x), r6(d.y), r6(d.w), d.o, d.kind]),
+        (b.continuations || []).map((c) => [c.flow,c.kind,c.o,r6(c.s0),r6(c.s1)]),
         b.links.map((l) => [l.a.key, l.a.room, l.b.key, l.b.room, l.kind])]);
     }
   }
@@ -62,7 +70,7 @@ const base = snapshot(new BR.World(SEED), ...R);
   check('visit order does not matter', snapshot(W, ...R) === base);
 }
 {
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, structures: 2 } });
   check('cache eviction does not matter', snapshot(W, ...R) === base);
 }
 check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], R[2], R[3], true) === base);
@@ -77,7 +85,7 @@ check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], 
 {
   const F = [1e6 - 120, -1e6 - 90, 1e6 + 120, -1e6 + 90];
   const a = snapshot(new BR.World(SEED), ...F);
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, structures: 2 } });
   W.collect(0, 0, 100, 100, Infinity, { interiors: true });
   check('far from the origin (1e6 m) still deterministic', snapshot(W, ...F) === a);
 }
@@ -117,90 +125,98 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   const signatures = new Set(distinct.map((d) => [d.majorAxis, d.corridorWidth, d.module, d.spineSpacing, d.spinePhase, d.crossSpacing, d.crossPhase].join(':')));
   check('different districts can have different architecture DNA', distinct.length >= 2 && signatures.size >= 2, `${distinct.length} districts, ${signatures.size} DNA signatures`);
 
-  // Offices and Hotel consume the DNA spatially. Their primary corridor blocks
-  // keep the district corridor width, and when a shared lattice line fits the
-  // territory it lands on the same world-coordinate phase as its neighbours.
-  let primary = 0, aligned = 0, badWidth = 0;
-  outer: for (const T of terrs) {
-    const a = W.final(T);
-    if (a !== 'offices' && a !== 'hotel') continue;
-    const D = W.architecture(T), I = W.interior(T);
-    for (const b of I.blocks) {
-      if (b.k !== BR.BLOCK_KIND.HALL) continue;
-      const w = b.x1 - b.x0, h = b.y1 - b.y0;
-      const isPrimary = D.majorAxis === 'x' ? w > h : h > w;
-      if (!isPrimary) continue;
-      primary++;
-      const width = D.majorAxis === 'x' ? h : w;
-      if (width !== D.corridorWidth) badWidth++;
-      const start = D.majorAxis === 'x' ? b.y0 : b.x0;
-      const mod = ((start - D.spinePhase) % D.spineSpacing + D.spineSpacing) % D.spineSpacing;
-      if (mod === 0 && width === D.corridorWidth) aligned++;
-      if (primary >= 400) break outer;
+  // ------------------------------------------------ district structure
+  const plannedGroups = [...groups.values()].filter((g) => g.length && (W.final(g[0]) === 'offices' || W.final(g[0]) === 'hotel'));
+  const plans = [];
+  for (const g of plannedGroups) {
+    const P = W.structure(g[0]);
+    if (P && !plans.some((x) => x.key === P.key)) plans.push(P);
+    if (plans.length >= 8) break;
+  }
+  const canonPlan = (P) => JSON.stringify({
+    key:P.key,dna:P.dnaKey,bounds:P.bounds.map(r6),
+    candidates:P.candidates.map((r)=>[r.kind,r.axis,r6(r.line),r6(r.s0),r6(r.s1)]),
+    routes:P.routes.map((r)=>[r.id,r.hierarchy,r.role,r.axis,r6(r.line),r6(r.s0),r6(r.s1),r.width]),
+    nodes:P.nodes.map((n)=>[r6(n.x),r6(n.y),n.kind]),anchors:P.anchors.map((a)=>[a.id,r6(a.x),r6(a.y),a.kind,a.zone])
+  });
+  let planStable = plans.length > 0;
+  if (plans.length) {
+    const P0 = plans[0], W2 = new BR.World(SEED, { limits:{ plans:12, interiors:8, boundaries:16, pairs:40, dna:2, structures:1 } });
+    // Force unrelated structure cache churn before rebuilding the target.
+    for (const P of plans.slice(1,5)) W2.structureBy(P.area,P.district);
+    planStable = canonPlan(W2.structureBy(P0.area,P0.district)) === canonPlan(P0);
+  }
+  check('district structure plan survives cache eviction', planStable, `${plans.length} sampled plans`);
+
+  const crosses = (A,B) => {
+    if (A.axis === B.axis) return A.line === B.line && Math.min(A.s1,B.s1) >= Math.max(A.s0,B.s0);
+    const H=A.axis==='x'?A:B,V=A.axis==='y'?A:B;
+    return V.line>=H.s0&&V.line<=H.s1&&H.line>=V.s0&&H.line<=V.s1;
+  };
+  let disconnectedPlans=0, major=0, secondary=0, service=0, plannedAnchors=0;
+  for (const P of plans) {
+    major += P.routes.filter((r)=>r.hierarchy==='major').length;
+    secondary += P.routes.filter((r)=>r.hierarchy==='secondary').length;
+    service += P.routes.filter((r)=>r.hierarchy==='service').length;
+    plannedAnchors += P.anchors.length;
+    if (!P.routes.length) { disconnectedPlans++; continue; }
+    const seenR=new Set([0]), stack=[0];
+    while(stack.length){const a=stack.pop();for(let b=0;b<P.routes.length;b++)if(!seenR.has(b)&&crosses(P.routes[a],P.routes[b])){seenR.add(b);stack.push(b);}}
+    if(seenR.size!==P.routes.length)disconnectedPlans++;
+  }
+  check('district route plans are connected', plans.length >= 2 && disconnectedPlans === 0, `${plans.length} plans, ${disconnectedPlans} disconnected`);
+  check('plans contain major, secondary and service circulation', major>0&&secondary>0&&service>0, `major ${major}, secondary ${secondary}, service ${service}`);
+  check('special-space anchors are attached to structure topology', plannedAnchors >= plans.length, `${plannedAnchors} anchors`);
+
+  let obligations=0, exact=0, adapted=0, failed=0, badFlows=0, anchorObs=0, anchorAttached=0;
+  for (const T of terrs) {
+    const a=W.final(T); if(a!=='offices'&&a!=='hotel')continue;
+    const I=W.interior(T); if(!I.structureKey)continue;
+    obligations += I.realizations.length;
+    anchorObs += I.anchors.length; anchorAttached += I.blocks.filter((b)=>b.anchor).length;
+    const routeIds=new Set(I.obligations.map((o)=>o.routeId));
+    for(const r of I.realizations){
+      if(r.status==='exact')exact++; else if(r.status==='adapted')adapted++; else failed++;
+      if(r.status!=='failed'&&!I.blocks.some((b)=>(b.flows||(b.flow?[b.flow]:[])).some((f)=>f.key===r.routeId)))badFlows++;
+      if(!routeIds.has(r.routeId))badFlows++;
     }
   }
-  check('office/hotel corridors inherit DNA width', primary >= 100 && badWidth === 0, `${primary} corridors, ${badWidth} wrong width`);
-  check('office/hotel corridors use shared DNA lattice', primary >= 100 && aligned / primary > 0.3, `${aligned}/${primary} aligned`);
+  const realized=exact+adapted;
+  check('territories realize district route obligations', obligations >= 200 && realized / obligations > 0.85 && badFlows===0,
+    `${realized}/${obligations} realized; exact ${exact}, adapted ${adapted}, failed ${failed}`);
+  check('route adaptation is exercised and explicit', adapted > 0 && failed >= 0, `${adapted} adapted, ${failed} failed`);
+  check('planned anchors become local special spaces', anchorObs > 0 && anchorAttached / anchorObs > 0.8, `${anchorAttached}/${anchorObs} attached`);
 
-  // Matching DNA circulation contracts should cross technical territory seams
-  // as one continuous corridor, not as a corridor-door-corridor sequence.
-  const edgeFlows = (I, s) => {
-    const out = [];
-    for (const b of I.blocks) {
-      if (!b.flow) continue;
-      if (s.o === 'v') {
-        if (b.flow.axis !== 'x' || (b.x0 !== s.c && b.x1 !== s.c)) continue;
-        const a = Math.max(s.s0, b.y0), z = Math.min(s.s1, b.y1);
-        if (z - a >= 0.9) out.push([b.flow.key, a, z]);
-      } else {
-        if (b.flow.axis !== 'y' || (b.y0 !== s.c && b.y1 !== s.c)) continue;
-        const a = Math.max(s.s0, b.x0), z = Math.min(s.s1, b.x1);
-        if (z - a >= 0.9) out.push([b.flow.key, a, z]);
-      }
-    }
-    return out;
-  };
-  const wallHits = (B, c) => {
-    for (let k = 0; k < B.walls.length; k += 4) {
-      const x0 = B.walls[k], y0 = B.walls[k + 1], x1 = B.walls[k + 2], y1 = B.walls[k + 3];
-      if (c.o === 'v' && x0 === x1 && x0 === c.x && Math.min(y1, c.s1) - Math.max(y0, c.s0) > 0.05) return true;
-      if (c.o === 'h' && y0 === y1 && y0 === c.y && Math.min(x1, c.s1) - Math.max(x0, c.s0) > 0.05) return true;
+  // Boundary reconciliation must preserve realized route identity, remove the
+  // seam wall only across that route, and never add a redundant normal door.
+  const wallHits = (B,c) => {
+    for(let k=0;k<B.walls.length;k+=4){
+      const x0=B.walls[k],y0=B.walls[k+1],x1=B.walls[k+2],y1=B.walls[k+3];
+      if(c.o==='v'&&x0===x1&&x0===c.x&&Math.min(y1,c.s1)-Math.max(y0,c.s0)>0.05)return true;
+      if(c.o==='h'&&y0===y1&&y0===c.y&&Math.min(x1,c.s1)-Math.max(x0,c.s0)>0.05)return true;
     }
     return false;
   };
-
-  let expectedCont = 0, actualCont = 0, continuationWalls = 0, continuationDoors = 0, continuationLinks = 0;
-  const seenCont = new Set(), terrKeys = new Set(terrs.map((T) => T.key));
-  outerCont: for (const T of terrs) {
-    const area = W.final(T);
-    if (area !== 'offices' && area !== 'hotel') continue;
-    const IA = W.interior(T);
-    for (const n of W.adj(T)) {
-      const U = n.U, pk = BR.pairKey(T, U);
-      if (seenCont.has(pk) || !terrKeys.has(U.key) || W.final(U) !== area) continue;
-      seenCont.add(pk);
-      const IB = W.interior(U);
-      if (IA.dnaKey !== IB.dnaKey || BR.pairInfo(W, T, U).wall !== 'thin') continue;
-      let matches = 0;
-      for (const s of n.segs) {
-        const A = edgeFlows(IA, s), BB = edgeFlows(IB, s);
-        for (const a of A) for (const b of BB)
-          if (a[0] === b[0] && Math.min(a[2], b[2]) - Math.max(a[1], b[1]) >= 0.9) matches++;
-      }
-      if (!matches) continue;
-      const B = W.boundary(T, U);
-      expectedCont += matches;
-      actualCont += B.continuations.length;
-      continuationDoors += B.doors.length;
-      continuationLinks += B.links.filter((L) => L.kind === 'continuation').length;
-      for (const c of B.continuations) if (wallHits(B, c)) continuationWalls++;
-      if (expectedCont >= 80) break outerCont;
+  let continuations=0, continuationWalls=0, redundantDoors=0, missingLinks=0;
+  const seenPairs=new Set(), terrKeys=new Set(terrs.map((T)=>T.key));
+  for(const T of terrs){
+    if(W.final(T)!=='offices'&&W.final(T)!=='hotel')continue;
+    for(const n of W.adj(T)){
+      const k=BR.pairKey(T,n.U);if(seenPairs.has(k)||!terrKeys.has(n.U.key))continue;seenPairs.add(k);
+      const B=W.boundary(T,n.U);if(!B.continuations.length)continue;
+      continuations+=B.continuations.length;redundantDoors+=B.doors.length;
+      if(B.semantic!=='continuation')missingLinks++;
+      for(const c of B.continuations){if(wallHits(B,c))continuationWalls++;
+        const linked=B.links.some((L)=>L.kind==='continuation'&&(
+          c.o==='v' ? Math.abs(L.x-c.x)<1e-6&&L.y>=c.s0-1e-6&&L.y<=c.s1+1e-6 :
+                      Math.abs(L.y-c.y)<1e-6&&L.x>=c.s0-1e-6&&L.x<=c.s1+1e-6));
+        if(!linked)missingLinks++;}
     }
   }
-  check('matching DNA corridors continue through territory seams', expectedCont >= 40 && actualCont === expectedCont, `${actualCont}/${expectedCont} continuations`);
-  check('continuation openings contain no seam wall', continuationWalls === 0, `${continuationWalls} wall overlaps`);
-  check('continuation seams suppress redundant normal doors', continuationDoors === 0, `${continuationDoors} doors`);
-  check('continuations add room-graph links', continuationLinks === actualCont, `${continuationLinks}/${actualCont} links`);
+  check('planned circulation crosses technical territory seams', continuations >= 40, `${continuations} continuations`);
+  check('continuation openings contain no seam wall', continuationWalls===0, `${continuationWalls} wall overlaps`);
+  check('continuations suppress redundant normal doors', redundantDoors===0, `${redundantDoors} doors`);
+  check('continuations are direct room-graph links', missingLinks===0, `${missingLinks} missing/misclassified links`);
 }
 
 // ------------------------------------------------------------ tiling
