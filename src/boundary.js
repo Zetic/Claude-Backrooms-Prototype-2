@@ -137,7 +137,7 @@
           let score = rng.f();
           if (CIRC.has(IA.rooms[r[0]].kind)) score += 1.5;
           if (CIRC.has(IB.rooms[r[1]].kind)) score += 1.5;
-          if ((sa || sb) && !info.band) score -= 4;
+          if (sa || sb) score -= 4;
           c.push({ si, t, r, score });
         }
       }
@@ -155,7 +155,7 @@
       pick(gather(d0, false), n, 'door');
       if (!chosen.length) for (const d of [1.4, 2.2, 3.2]) { pick(gather(d, false), 1, 'passage'); if (chosen.length) break; }
       if (!chosen.length) W.stats.doorFailures++;
-    } else if (info.service) pick(gather(d0, true), 1, 'service');   // forbidden pair: maybe one door into the band
+    }
 
     // Door gaps are added to the structural continuation gaps above.
     for (const c of chosen) {
