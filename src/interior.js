@@ -158,13 +158,15 @@
     for(let yi=0;yi<Y.length-1;yi++)for(let xi=0;xi<X.length-1;xi++){const x0=X[xi],x1=X[xi+1],y0=Y[yi],y1=Y[yi+1],cx=(x0+x1)/2,cy=(y0+y1)/2;
       const cover=pieces.filter((p)=>cx>p.q[0]-1e-9&&cx<p.q[2]+1e-9&&cy>p.q[1]-1e-9&&cy<p.q[3]+1e-9)
         .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));
-      const r=cover.length?cover[0].r:null;
-      cells.push({x0,y0,x1,y1,tag:r?r.routeId:null,r});}
+      const r=cover.length?cover[0].r:null, flows=[];
+      for(const p of cover) if(p.r.flow&&!flows.some((f)=>f.key===p.r.flow.key)) flows.push(p.r.flow);
+      const flowSig=flows.map((f)=>f.key).sort().join('|');
+      cells.push({x0,y0,x1,y1,tag:r?r.routeId:null,r,flows,flowSig});}
     const used=new Set();
     for(let i=0;i<cells.length;i++){if(used.has(i))continue;const c=cells[i];let x1=c.x1;used.add(i);
-      for(let j=i+1;j<cells.length;j++){if(used.has(j))continue;const d=cells[j];if(d.tag===c.tag&&d.y0===c.y0&&d.y1===c.y1&&d.x0===x1){x1=d.x1;used.add(j);}}
+      for(let j=i+1;j<cells.length;j++){if(used.has(j))continue;const d=cells[j];if(d.tag===c.tag&&d.flowSig===c.flowSig&&d.y0===c.y0&&d.y1===c.y1&&d.x0===x1){x1=d.x1;used.add(j);}}
       const q2=[c.x0,c.y0,x1,c.y1];
-      if(c.r){const b=blk(q2,c.r.hierarchy==='service'?SERVICE:HALL);b.flow=c.r.flow;b.routeHierarchy=c.r.hierarchy;b.realization=c.r.status;out.push(b);}
+      if(c.r){const b=blk(q2,c.r.hierarchy==='service'?SERVICE:HALL);b.flow=c.r.flow;b.flows=c.flows.slice();b.routeHierarchy=c.r.hierarchy;b.realization=c.r.status;out.push(b);}
       else{const [w,h]=dims(q2);out.push(blk(q2,Math.min(w,h)<4.5?ROOM:BLOCK,area==='hotel'?'guest':null));}}
     for(const a of anchors){let best=null,bd=Infinity;for(const b of out){if(b.k===HALL||b.k===SERVICE)continue;
       const cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2,d=(cx-a.x)**2+(cy-a.y)**2;if(d<bd&&Math.min(b.x1-b.x0,b.y1-b.y0)>=6){bd=d;best=b;}}
@@ -417,7 +419,12 @@
       if (e.open || e.len < 0.35) continue;
       const a=R[e.a],b=R[e.b],amin=Math.min(a.x1-a.x0,a.y1-a.y0),bmin=Math.min(b.x1-b.x0,b.y1-b.y0);
       if (amin >= 1.4 && bmin >= 1.4) continue;
-      const sp=(e.s0+e.s1)/2,rr=rooms(e,sp);if(!rr)continue;
+      const sp=(e.s0+e.s1)/2; let rr=rooms(e,sp);
+      if(!rr){
+        const centerRoom=(bi)=>{const q=R[bi],x=(q.x0+q.x1)/2,y=(q.y0+q.y1)/2;return blockRoomAt(I,bi,x,y,false);};
+        const ra=centerRoom(e.a),rb=centerRoom(e.b); if(ra>=0&&rb>=0) rr=[ra,rb];
+      }
+      if(!rr)continue;
       const pc=P(e,sp);uf.union(e.a,e.b);e.open=true;
       links.push({a:rr[0],b:rr[1],x:pc[0],y:pc[1],w:e.len,kind:'merge'});
     }
@@ -605,7 +612,8 @@
   function interiorBlockAt(I, x, y) {
     for (const b of I.blocks) if (x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1)
       return { kind: b.k, zone: I.zones[b.z].type, sub: I.zones[b.z].sub, flow: b.flow || null,
-        realization: b.realization || null, anchor: b.anchor || null, anchorKind: b.anchorKind || null };
+        flows: b.flows || (b.flow ? [b.flow] : []), realization: b.realization || null,
+        anchor: b.anchor || null, anchorKind: b.anchorKind || null };
     return null;
   }
 
