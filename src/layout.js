@@ -246,6 +246,10 @@
     const doorable = info.segs.some((sg) => sg.s1 - sg.s0 >= 3.2);   // room for a door at all
     if (!doorable) {
       info.mode = 'never';                       // corner contact: just a wall
+      if (!BR.isPocket(fa) && !BR.isPocket(fb)) {
+        const R = BR.rule(fa, fb);
+        if (R && R.thick >= 0.5) info.wall = 'thick';
+      }
     } else if (BR.isPocket(fa) || BR.isPocket(fb)) {
       if (BR.isPocket(fa) && BR.isPocket(fb)) info.mode = 'never';
       else {
