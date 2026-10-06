@@ -61,7 +61,8 @@
     const r=new Rng(hash4(seed,a,b,S.MANIFEST));
     const exists=r.f()<cfg.districtP;
     const cx=(a+0.15+0.7*r.f())*C, cy=(b+0.15+0.7*r.f())*C;
-    const type=weighted(r,BR.MANIFEST_TYPES||{},'offices');
+    const mt=BR.MANIFEST_TYPES||{}, fallbackType=Object.keys(mt)[0]||'backrooms';
+    const type=weighted(r,mt,fallbackType);
     const A=BR.AREAS[type]||{}, M=A.manifestation||{};
     const form=weighted(r,M.forms||DEFAULT_FORMS,'compact');
     const scale=weighted(r,M.scales||DEFAULT_SCALES,'medium');
