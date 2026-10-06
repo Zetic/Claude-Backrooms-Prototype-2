@@ -14,7 +14,7 @@
  *   - every room in a large region is reachable from every other.
  */
 const path = require('path');
-for (const f of ['core', 'areas', 'layout', 'zones', 'interior', 'boundary', 'world'])
+for (const f of ['core', 'areas', 'layout', 'structure', 'zones', 'interior', 'boundary', 'world'])
   require(path.join(__dirname, '..', 'src', f + '.js'));
 const BR = globalThis.BR;
 
@@ -62,7 +62,7 @@ const base = snapshot(new BR.World(SEED), ...R);
   check('visit order does not matter', snapshot(W, ...R) === base);
 }
 {
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, structures: 2 } });
   check('cache eviction does not matter', snapshot(W, ...R) === base);
 }
 check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], R[2], R[3], true) === base);
@@ -77,7 +77,7 @@ check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], 
 {
   const F = [1e6 - 120, -1e6 - 90, 1e6 + 120, -1e6 + 90];
   const a = snapshot(new BR.World(SEED), ...F);
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, structures: 2 } });
   W.collect(0, 0, 100, 100, Infinity, { interiors: true });
   check('far from the origin (1e6 m) still deterministic', snapshot(W, ...F) === a);
 }
