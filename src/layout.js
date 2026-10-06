@@ -32,9 +32,9 @@
  *              other through base pairs within a few hops (so the map stays
  *              connected; whether a pair is base never depends on another
  *              pair's outcome, so drops can't cascade)
- *   never    - no ordinary door (pocket walls, forbidden pairs)
- * Forbidden area pairs and some long "service lines" along super-cell edges
- * get a maintenance BAND: a 3-4 m service corridor carved from one side.
+ *   never    - no ordinary door (pocket walls).
+ * Mixed-area transitions are represented directly by their wall/door contract.
+ * Maintenance is never inserted automatically along territory or biome edges.
  */
 (function (root) {
   'use strict';
@@ -44,10 +44,9 @@
   const CFG = {
     SC: 150, JMIN: 5, JMAX: 34,      // super-cell spacing and edge shift range (m)
     earMin: 12, earArea: 240,        // smaller ears join a neighbouring territory
-    serviceP: 0.22, serviceRun: 3,   // service lines: chance per run of 3 lattice edges
     bypassHops: 5
   };
-  const S = { H: 0x101, V: 0x102, BOX: 0x103, SPLIT: 0x104, TERR: 0x105, FRONT: 0x107, PAIR: 0x108, SL_H: 0x109, SL_V: 0x10a };
+  const S = { H: 0x101, V: 0x102, BOX: 0x103, SPLIT: 0x104, TERR: 0x105, FRONT: 0x107, PAIR: 0x108 };
 
   // ---------------------------------------------------------------- lattice
   function mag(seed, i, j, s) { return CFG.JMIN + Math.floor(hashf(seed, i, j, s) * (CFG.JMAX - CFG.JMIN + 1)); }
@@ -131,7 +130,7 @@
         base: a.area, district: a.district,
         h: hash4(seed, i, j, k * 16 + S.TERR),
         bbox: [bx0, by0, bx1, by1],
-        _adj: null, _final: undefined, _front: undefined, _bands: null, _carve: null
+        _adj: null, _final: undefined, _front: undefined
       };
     });
     return { i, j, core, ears, territories };
@@ -214,33 +213,6 @@
     return f;
   }
 
-  // ----------------------------------------------------------------- bands
-  /** Rect depth of territory T perpendicular to segment s (from T's side). */
-  function depthAt(T, s) {
-    const r = T.rects[s.ri];
-    return s.o === 'h' ? r[3] - r[1] : r[2] - r[0];
-  }
-
-  /**
-   * Service lines: long maintenance corridors along super-cell edges. Lattice
-   * edges are grouped in runs of 3 along a row/column; a run is a service line
-   * with probability serviceP, and its band always sits on the same side.
-   */
-  function serviceLine(W, A, B) {
-    const seed = W.seed;
-    if (A.i === B.i && Math.abs(A.j - B.j) === 1) {
-      const jl = Math.max(A.j, B.j), h = hash4(seed, jl, Math.floor(A.i / CFG.serviceRun), S.SL_H);
-      if (h / BR.U32 >= CFG.serviceP) return null;
-      return { o: 'h', cell: (h >>> 7) & 1 ? [A.i, jl] : [A.i, jl - 1] };
-    }
-    if (A.j === B.j && Math.abs(A.i - B.i) === 1) {
-      const il = Math.max(A.i, B.i), h = hash4(seed, il, Math.floor(A.j / CFG.serviceRun), S.SL_V);
-      if (h / BR.U32 >= CFG.serviceP) return null;
-      return { o: 'v', cell: (h >>> 7) & 1 ? [il, A.j] : [il - 1, A.j] };
-    }
-    return null;
-  }
-
   // ----------------------------------------------------------------- pairs
   function pairKey(A, B) { return A.key < B.key ? A.key + '|' + B.key : B.key + '|' + A.key; }
 
@@ -258,12 +230,14 @@
     const h = mix32(A.h ^ mix32(B.h + S.PAIR));
     const rng = new Rng(h);
     info = { key, a: A, b: B, segs: n ? n.segs : [], len: n ? n.len : 0, fa, fb, h,
-      wall: 'thin', doors: 0, mode: 'base', band: null, service: false, wide: 0, _dc: undefined };
-    const bandW = rng.int(BR.AREAS.maintenance.band[0], BR.AREAS.maintenance.band[1]);
+      wall: 'thin', doors: 0, mode: 'base', wide: 0, _dc: undefined };
     const doorable = info.segs.some((sg) => sg.s1 - sg.s0 >= 3.2);   // room for a door at all
     if (!doorable) {
       info.mode = 'never';                       // corner contact: just a wall
-      if (!BR.isPocket(fa) && !BR.isPocket(fb) && BR.rule(fa, fb) === 'band') info.wall = 'thick';
+      if (!BR.isPocket(fa) && !BR.isPocket(fb)) {
+        const R = BR.rule(fa, fb);
+        if (R && R.thick >= 0.5) info.wall = 'thick';
+      }
     } else if (BR.isPocket(fa) || BR.isPocket(fb)) {
       if (BR.isPocket(fa) && BR.isPocket(fb)) info.mode = 'never';
       else {
@@ -271,36 +245,13 @@
         if (frontOf(W, P) === O.key) info.doors = 1; else info.mode = 'never';
       }
     } else {
-      const R = BR.rule(fa, fb);
-      if (R === 'band') {
-        // forbidden pair: carve a band from whichever side has room for it
-        info.mode = 'never';
-        info.service = rng.f() < 0.35;
-        const first = rng.f() < 0.5 ? A : B, second = first === A ? B : A;
-        for (const T of [first, second]) {
-          const segs = T === A ? info.segs : (adjEntry(W, B, A) || { segs: [] }).segs;
-          if (segs.length && segs.every((s) => depthAt(T, s) >= 12 + bandW)) { info.band = { owner: T.key, w: bandW, o: null }; break; }
-        }
-        if (!info.band) info.wall = 'thick';         // no room for a band: a thick wall instead
-      } else {
-        const u = rng.f();
-        info.wall = u < R.open ? 'open' : u < R.open + R.thick ? 'thick' : 'thin';
-        info.doors = Math.max(R.min, Math.min(R.max, Math.round(info.len / R.every)));
-        info.wide = R.wide;
-        // short contacts are optional too: their one door is the likeliest to
-        // land on a solid, and a bypass usually exists
-        info.mode = info.wall === 'open' ? 'base' : rng.f() < R.pNone || info.len < 8 ? 'optional' : 'base';
-        const sl = serviceLine(W, A, B);
-        if (sl) {
-          const owner = A.i === sl.cell[0] && A.j === sl.cell[1] ? A : B;
-          const segs = owner === A ? info.segs : (adjEntry(W, B, A) || { segs: [] }).segs;
-          const along = segs.filter((s) => s.o === sl.o);
-          if (along.length && along.every((s) => depthAt(owner, s) >= 12 + bandW)) {
-            info.band = { owner: owner.key, w: bandW, o: sl.o };
-            info.wall = 'thin';                        // a band always has a wall on its far side
-          }
-        }
-      }
+      const R = BR.rule(fa, fb), u = rng.f();
+      info.wall = u < R.open ? 'open' : u < R.open + R.thick ? 'thick' : 'thin';
+      info.doors = Math.max(R.min, Math.min(R.max, Math.round(info.len / R.every)));
+      info.wide = R.wide;
+      // Short contacts are optional too: their one door is the likeliest to
+      // land on a solid, and a bypass usually exists.
+      info.mode = info.wall === 'open' ? 'base' : rng.f() < R.pNone || info.len < 8 ? 'optional' : 'base';
     }
     W.pairs.set(key, info);
     if (W.pairs.size > W.limits.pairs) W.evict(W.pairs, W.limits.pairs >> 2);
@@ -338,48 +289,6 @@
     return d;
   }
 
-  /** Maintenance band strips T must carve: [{ ri, side, w }] (sides 0 top 1 bottom 2 left 3 right). */
-  function bands(W, T) {
-    if (T._bands) return T._bands;
-    const out = [];
-    for (const n of adjacency(W, T)) {
-      const info = pairInfo(W, T, n.U);
-      if (!info.band || info.band.owner !== T.key) continue;
-      for (const s of n.segs) {
-        if (info.band.o && s.o !== info.band.o) continue;
-        if (!out.some((b) => b.ri === s.ri && b.side === s.side)) out.push({ ri: s.ri, side: s.side, w: info.band.w });
-      }
-    }
-    out.sort((p, q) => p.ri - q.ri || p.side - q.side);
-    T._bands = out;
-    return out;
-  }
-
-  /**
-   * Apply T's band list to its rects: { rects: remaining floor rect per T rect,
-   * strips: [{ q, ri }] }. Top/bottom strips span the full side; left/right
-   * strips fit between them, so bands meeting at a corner join up.
-   */
-  function carveBands(W, T) {
-    if (T._carve) return T._carve;
-    const list = bands(W, T), rects = [], strips = [];
-    T.rects.forEach((r0, ri) => {
-      const r = r0.slice();
-      for (const b of list) {
-        if (b.ri !== ri) continue;
-        const depth = b.side < 2 ? r[3] - r[1] : r[2] - r[0];
-        if (depth < b.w + 8) continue;
-        if (b.side === 0) { strips.push({ q: [r[0], r[1], r[2], r[1] + b.w], ri }); r[1] += b.w; }
-        else if (b.side === 1) { strips.push({ q: [r[0], r[3] - b.w, r[2], r[3]], ri }); r[3] -= b.w; }
-        else if (b.side === 2) { strips.push({ q: [r[0], r[1], r[0] + b.w, r[3]], ri }); r[0] += b.w; }
-        else { strips.push({ q: [r[2] - b.w, r[1], r[2], r[3]], ri }); r[2] -= b.w; }
-      }
-      rects.push(r);
-    });
-    T._carve = { rects, strips };
-    return T._carve;
-  }
-
   /** Territory containing world point (x,y), or null. */
   function territoryAt(W, x, y) {
     const i0 = Math.floor(x / CFG.SC), j0 = Math.floor(y / CFG.SC);
@@ -395,6 +304,6 @@
 
   Object.assign(BR, {
     LAYOUT: CFG, superCell, buildPlan, segBetween, adjacency, finalArea, frontOf,
-    pairKey, pairInfo, doorCount, bands, carveBands, territoryAt
+    pairKey, pairInfo, doorCount, territoryAt
   });
 })(typeof window !== 'undefined' ? window : globalThis);

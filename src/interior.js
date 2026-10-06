@@ -1,22 +1,17 @@
 /*
  * interior.js - level 3: the rooms inside one territory.
  *
- *   1. bands     - maintenance strips the plan says this territory carves
- *   2. blocks    - the territory is cut in its AREA's style:
- *                    irregular (Backrooms)  random guillotine cuts, any grain
- *                    spine     (Offices)    corridor spine (+ cross corridor),
- *                                           suites along it
- *                    hotel     (Hotel)      spine with single rooms, a lobby
- *                    hall      (Poolrooms, Parking) one or two huge halls plus
- *                                           a strip of service rooms
- *                    house     (Home)       a residential layout
- *                    utility   (Maintenance pocket) plant rooms
- *                  or, rarely, one landmark block (grand hall, atrium...)
- *   3. zones     - every block is filled from the zone catalogue (zones.js)
- *                  with the area's weights, avoiding its neighbours' types
- *   4. connect   - shared walls between blocks: some open up, then a random
- *                  spanning tree of doors (corridors first, service strips
- *                  last) plus loops. Doors only where both sides are floor.
+ *   1. obligations - selected district routes are realized first where the
+ *                    area has a district structure plan
+ *   2. local plan  - residual floor is divided into bounded access catchments,
+ *                    local circulation and geometry-validated parcels
+ *   3. blocks      - areas without district structure use their existing
+ *                    irregular/hall/house/utility grammar
+ *   4. zones       - semantic archetypes are selected only after geometry and
+ *                    access are known; incompatible dense types are rejected
+ *   5. connect     - shared walls between blocks: some open up, then a random
+ *                  spanning tree of doors (circulation first) plus loops.
+ *                  Doors are only placed where both sides are floor.
  *
  * The result lists rooms (graph nodes), links (graph edges inside the
  * territory) and drawing primitives, all in world coordinates.
@@ -145,35 +140,50 @@
     R.status='adapted';R.shift=delta;R.rects=pieces;R.flow=flowFromObligation(dna,o,'adapted');return R;
   }
 
-  function plannedBlocks(q, obligations, anchors, rng, st, area, out, realizations) {
+  function plannedBlocks(q, obligations, anchors, rng, st, area, out, realizations, spacePlans, planKey) {
+    const outStart=out.length;
     const realized=[];
-    for(const o of obligations){const r=realizeObligation(q,o,st.dna);realizations.push(r);if(r.status!=='failed')realized.push(r);}
-    if(!realized.length){const leaves=[];guillotine(q,rng,area==='hotel'?190:240,6,leaves,0);
-      for(const l of leaves){const [w,h]=dims(l);out.push(blk(l,Math.min(w,h)<5?ROOM:BLOCK,area==='hotel'?'guest':null));}return;}
-    const xs=new Set([q[0],q[2]]),ys=new Set([q[1],q[3]]),pieces=[];
-    for(const r of realized)for(const c of r.rects){const x0=Math.max(q[0],c[0]),y0=Math.max(q[1],c[1]),x1=Math.min(q[2],c[2]),y1=Math.min(q[3],c[3]);
-      if(x1-x0<0.05||y1-y0<0.05)continue;xs.add(x0);xs.add(x1);ys.add(y0);ys.add(y1);pieces.push({q:[x0,y0,x1,y1],r});}
-    const X=[...xs].sort((a,b)=>a-b),Y=[...ys].sort((a,b)=>a-b),cells=[];
-    const priority=(r)=>BR.STRUCTURE_PRIORITY[r.hierarchy]||0;
-    for(let yi=0;yi<Y.length-1;yi++)for(let xi=0;xi<X.length-1;xi++){const x0=X[xi],x1=X[xi+1],y0=Y[yi],y1=Y[yi+1],cx=(x0+x1)/2,cy=(y0+y1)/2;
-      const cover=pieces.filter((p)=>cx>p.q[0]-1e-9&&cx<p.q[2]+1e-9&&cy>p.q[1]-1e-9&&cy<p.q[3]+1e-9)
-        .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));
-      const r=cover.length?cover[0].r:null, flows=[];
-      for(const p of cover) if(p.r.flow&&!flows.some((f)=>f.key===p.r.flow.key)) flows.push(p.r.flow);
-      const flowSig=flows.map((f)=>f.key).sort().join('|');
-      cells.push({x0,y0,x1,y1,tag:r?r.routeId:null,r,flows,flowSig});}
-    const used=new Set();
-    for(let i=0;i<cells.length;i++){if(used.has(i))continue;const c=cells[i];let x1=c.x1;used.add(i);
-      for(let j=i+1;j<cells.length;j++){if(used.has(j))continue;const d=cells[j];if(d.tag===c.tag&&d.flowSig===c.flowSig&&d.y0===c.y0&&d.y1===c.y1&&d.x0===x1){x1=d.x1;used.add(j);}}
-      const q2=[c.x0,c.y0,x1,c.y1];
-      if(c.r){const b=blk(q2,c.r.hierarchy==='service'?SERVICE:HALL);b.flow=c.r.flow;b.flows=c.flows.slice();b.routeHierarchy=c.r.hierarchy;b.realization=c.r.status;out.push(b);}
-      else{const [w,h]=dims(q2);out.push(blk(q2,Math.min(w,h)<4.5?ROOM:BLOCK,area==='hotel'?'guest':null));}}
-    for(const a of anchors){let best=null,bd=Infinity;for(const b of out){if(b.k===HALL||b.k===SERVICE)continue;
-      const cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2,d=(cx-a.x)**2+(cy-a.y)**2;if(d<bd&&Math.min(b.x1-b.x0,b.y1-b.y0)>=6){bd=d;best=b;}}
-      if(best){best.zt=a.zone;best.anchor=a.id;best.anchorKind=a.kind;}}
-    if(area==='hotel')for(const b of out){if(b.k===HALL||b.k===SERVICE||b.zt!=='guest')continue;let best=null,bl=-1;
-      for(const h of out){if(h.k!==HALL)continue;const e=sharedSeg(b,h);if(e&&e.len>bl){bl=e.len;best=e;}}
-      if(best){if(best.v)b.front='x'+(b.x0===best.c?'0':'1');else b.front='y'+(b.y0===best.c?'0':'1');}}
+    for(const o of obligations){
+      const r=realizeObligation(q,o,st.dna);
+      realizations.push(r);
+      if(r.status!=='failed')realized.push(r);
+    }
+
+    // Major routes are already decided at district scope. Local space planning
+    // now determines how the residual floor is served and parcelled before any
+    // semantic room/zone generator is selected.
+    const P=BR.planLocalSpace(q,realized,area,st.dna,planKey);
+    spacePlans.push(P);
+
+    for(const r of P.districtRoutes){
+      const b=blk(r.q,r.hierarchy==='service'?SERVICE:HALL);
+      b.flow=r.flow||null;b.flows=(r.flows||[]).slice();b.routeHierarchy=r.hierarchy;
+      b.realization=r.realization;b.routeId=r.routeId;out.push(b);
+    }
+    for(const r of P.localRoutes){
+      const b=blk(r.q,HALL);
+      b.routeHierarchy='local';b.realization='local';b.routeId=r.routeId;b.localRoute=true;
+      out.push(b);
+    }
+    for(const p of P.parcels){
+      const b=blk(p.q,BLOCK);
+      b.space=Object.assign({id:p.id,area},p.meta);
+      b.front=b.space.frontSide||null;
+      out.push(b);
+    }
+
+    // Special-space anchors attach to suitable parcels after access/catchment
+    // planning, so they cannot erase required circulation.
+    for(const a of anchors){
+      let best=null,bd=Infinity;
+      for(let bi=outStart;bi<out.length;bi++){
+        const b=out[bi];
+        if(b.k===HALL||b.k===SERVICE||!b.space||b.anchor)continue;
+        const cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2,d=(cx-a.x)**2+(cy-a.y)**2;
+        if(d<bd&&Math.min(b.x1-b.x0,b.y1-b.y0)>=4&&(b.x1-b.x0)*(b.y1-b.y0)>=24){bd=d;best=b;}
+      }
+      if(best){best.zt=a.zone;best.anchor=a.id;best.anchorKind=a.kind;}
+    }
   }
 
   /** Cut [0,U) into chunks of length in [a,b] (last chunk absorbs a short remainder). */
@@ -286,8 +296,14 @@
     for (let i = before; i + 1 < out.length; i++) {
       const a = out[i], b = out[i + 1];
       if (a.zt !== 'guest' || b.zt !== 'guest' || a.front !== b.front || rng.f() > 0.15) continue;
-      if (a.y0 === b.y0 && a.y1 === b.y1 && a.x1 === b.x0) { a.x1 = b.x1; out.splice(i + 1, 1); }
-      else if (a.x0 === b.x0 && a.x1 === b.x1 && a.y1 === b.y0) { a.y1 = b.y1; out.splice(i + 1, 1); }
+      const P=BR.spacePolicy('hotel',D);
+      if (a.y0 === b.y0 && a.y1 === b.y1 && a.x1 === b.x0) {
+        const frontage=a.front[0]==='y'?b.x1-a.x0:a.y1-a.y0,depth=a.front[0]==='y'?a.y1-a.y0:b.x1-a.x0;
+        if(frontage<=Math.max(12,P.maxFrontage*1.4)&&depth<=P.maxDepth) { a.x1 = b.x1; out.splice(i + 1, 1); }
+      } else if (a.x0 === b.x0 && a.x1 === b.x1 && a.y1 === b.y0) {
+        const frontage=a.front[0]==='x'?b.y1-a.y0:a.x1-a.x0,depth=a.front[0]==='x'?a.x1-a.x0:b.y1-a.y0;
+        if(frontage<=Math.max(12,P.maxFrontage*1.4)&&depth<=P.maxDepth) { a.y1 = b.y1; out.splice(i + 1, 1); }
+      }
     }
   };
 
@@ -373,7 +389,7 @@
   /**
    * Openings between the blocks of a territory, recorded as links between
    * rooms (the room graph). Corridor walls are tried first and service strips
-   * last, so suites open onto corridors and service bands get few doors.
+   * last, so occupied spaces preferentially open onto circulation.
    */
   function connect(I, rng, st) {
     const R = I.blocks, n = R.length, Zs = I.zones;
@@ -528,14 +544,13 @@
     const rng = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.INT));
     const area = W.final(T), A = BR.AREAS[area], dna = BR.architectureDNA(W, T, area);
     const st = makeStyle(A, rng, dna);
-    const { rects, strips } = BR.carveBands(W, T);
+    const rects = T.rects.map((r) => r.slice());
     const structure = BR.territoryStructure(W, T, rects);
-    const blocks = [], realizations = [];
-    for (const s of strips) blocks.push(blk(s.q, SERVICE));
+    const blocks = [], realizations = [], spacePlans = [];
     // landmark: one huge block
     const r0 = rects[0], [w0, h0] = dims(r0);
     let landmark = null;
-    if (!structure.plan && A.landmarks && T.rects.length === 1 && !strips.length && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
+    if (!structure.plan && A.landmarks && T.rects.length === 1 && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
       new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK)).f() < A.landmarkP * dna.landmarkBias) {
       landmark = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK + 1)).weighted(A.landmarks);
       if (landmark === 'longGallery' && Math.max(w0, h0) < 2.2 * Math.min(w0, h0)) landmark = 'grandHall';
@@ -547,13 +562,25 @@
       if (structure.plan) {
         const obs = structure.routes.filter((o) => o.rectIndex === ri);
         const ans = structure.anchors.filter((a) => a.x >= q[0] && a.x <= q[2] && a.y >= q[1] && a.y <= q[3]);
-        plannedBlocks(q, obs, ans, rng, st, area, blocks, realizations); return;
+        plannedBlocks(q, obs, ans, rng, st, area, blocks, realizations, spacePlans, T.key + '|rect|' + ri); return;
       }
       if (ri > 0 || w * h < 60 || Math.min(w, h) < 6) { blocks.push(blk(q, ROOM)); return; }
       LAY[A.style](q, rng, st, A, blocks);
     });
     // zones, avoiding the types of neighbouring blocks
-    const I = { key: T.key, area, landmark, dna, dnaKey: dna.key, structureKey: structure.plan && structure.plan.key, obligations: structure.routes, anchors: structure.anchors, realizations, blocks, zones: [], rooms: [], links: [], walls: [] };
+    const spacePlan = {
+      parts: spacePlans,
+      parcels: spacePlans.flatMap((p) => p.parcels),
+      localRoutes: spacePlans.flatMap((p) => p.localRoutes),
+      diagnostics: spacePlans.reduce((a,p) => {
+        const d=p.diagnostics;a.parcels+=d.parcels;a.support+=d.support;a.localRoutes+=d.localRoutes;
+        a.unserved+=d.unserved;if(d.capHit)a.capHit=true;
+        for(const k in d.violations)a.violations[k]=(a.violations[k]||0)+d.violations[k];
+        return a;
+      },{parcels:0,support:0,localRoutes:0,unserved:0,capHit:false,violations:{}})
+    };
+    const I = { key: T.key, area, landmark, dna, dnaKey: dna.key, structureKey: structure.plan && structure.plan.key,
+      obligations: structure.routes, anchors: structure.anchors, realizations, spacePlan, blocks, zones: [], rooms: [], links: [], walls: [] };
     const nb = blocks.map(() => []);
     for (let i = 0; i < blocks.length; i++) for (let j = i + 1; j < blocks.length; j++)
       if (sharedSeg(blocks[i], blocks[j])) { nb[i].push(j); nb[j].push(i); }
@@ -576,9 +603,9 @@
         if (!t) {
           const avoid = [];
           for (const j of nb[i]) if (blocks[j].z >= 0) avoid.push(I.zones[blocks[j].z].type);
-          t = BR.pickZoneType(rng, st.zones, q, avoid, 0);
+          t = BR.pickZoneType(rng, st.zones, q, avoid, 0, b.space || null);
         }
-        Z = BR.fillZone(t, q, rng, st, { front: b.front, garden: area === 'hotel' || area === 'home' });
+        Z = BR.fillZone(t, q, rng, st, { front: b.front, space: b.space || null, garden: area === 'hotel' || area === 'home' });
       }
       b.z = I.zones.length;
       I.zones.push(Z);
@@ -613,6 +640,7 @@
     for (const b of I.blocks) if (x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1)
       return { kind: b.k, zone: I.zones[b.z].type, sub: I.zones[b.z].sub, flow: b.flow || null,
         flows: b.flows || (b.flow ? [b.flow] : []), realization: b.realization || null,
+        routeHierarchy: b.routeHierarchy || null, space: b.space || null,
         anchor: b.anchor || null, anchorKind: b.anchorKind || null };
     return null;
   }

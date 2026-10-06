@@ -4,18 +4,17 @@
  * Every territory belongs to exactly one AREA. Areas have a ROLE:
  *   base     - Backrooms: fills everything nothing else claims
  *   district - Offices, Hotel, Poolrooms, Parking: large compact regions
- *   pocket   - Home, Maintenance rooms: one territory, fully inside one host
- *   network  - Maintenance: thin service bands carved along boundaries
+ *   pocket   - Home, Maintenance: one territory, fully inside one host
  *
  * Districts come from a deterministic field: seeds on a coarse jittered
  * lattice, each a warped box/ellipse blend. A point's area is the district
  * whose shape it is deepest inside, else Backrooms. The field is sampled at
  * territory centres, so area edges always follow territory edges (walls).
  *
- * RULES says how every pair of areas meets: wall type, door spacing, how
- * often a pair may have no door at all, and which pairs may not touch (a
- * maintenance band is carved between them). All rules are applied per
- * boundary from the two sides only, so they never cascade.
+ * RULES says how every pair of areas meets: wall type, door spacing and how
+ * often a pair may have no door at all. Mixed-area transitions remain direct
+ * architectural boundaries; Maintenance is generated only as its own pocket/
+ * territory, never as a gasket automatically inserted between biomes.
  */
 (function (root) {
   'use strict';
@@ -51,7 +50,7 @@
       name: 'Hotel', role: 'district', color: '#adb6c7',
       split: { tmin: 16, tmax: 64, pSplit: 0.4, maxAspect: 4.5, shortMax: 28 },
       style: 'hotel', chunk: [4, 8], depthMin: 4,
-      zones: { open: 2, gallery: 1, courtyard: 0.6 },
+      zones: { guest: 5.5, open: 1.5, gallery: 0.8, courtyard: 0.45 },
       landmarks: { atrium: 1 }, landmarkP: 0.03,
       roomScale: [0.9, 1.1], pillars: 0.7, pOpen: [0, 0.05], pLoop: [0, 0.1], pWide: [0, 0.05]
     },
@@ -79,9 +78,9 @@
       roomScale: [0.9, 1.1], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.1]
     },
     maintenance: {
-      name: 'Maintenance', role: 'network', color: '#b5b2a8',
+      name: 'Maintenance', role: 'pocket', color: '#b5b2a8',
       pocket: { hosts: ['backrooms', 'parking', 'poolrooms'], p: 0.025, minDim: 12, maxDim: 40, salt: 62 },
-      style: 'utility', band: [3, 4],
+      style: 'utility',
       roomScale: [0.7, 0.9], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.05]
     }
   };
@@ -110,8 +109,11 @@
     'hotel|offices': R(0, 0, 40, 1, 1, 0.4, 0),
     'offices|parking': R(0, 1, 40, 1, 1, 0.6, 0),
     'hotel|poolrooms': R(0, 1, 40, 1, 1, 0.6, 0),
-    // may not touch: a maintenance band is carved between them
-    'offices|poolrooms': 'band', 'parking|poolrooms': 'band', 'hotel|parking': 'band'
+    // Former maintenance-band pairs now meet directly through a strong
+    // transition wall with sparse localized access.
+    'offices|poolrooms': R(0, 1, 52, 1, 1, 0.55, 0.05),
+    'parking|poolrooms': R(0, 1, 46, 1, 1, 0.45, 0.2),
+    'hotel|parking': R(0, 1, 55, 1, 1, 0.6, 0.05)
   };
   const DEFAULT_RULE = R(0, 0, 30, 1, 1, 0.4, 0.1);
   function rule(a, b) {

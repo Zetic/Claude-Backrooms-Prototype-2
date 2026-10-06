@@ -73,7 +73,8 @@
     <option value="selected">3 · Selected structure</option>
     <option value="obligations">4 · Territory obligations</option>
     <option value="realized">5 · Realized circulation</option>
-    <option value="boundaries">6 · Boundary reconciliation</option>
+    <option value="space">6 · Local space plan</option>
+    <option value="boundaries">7 · Boundary reconciliation</option>
     <option value="full">Full generation debug</option>
   </select>
   <div class="sec">Generation debug</div>
@@ -86,6 +87,10 @@
     <label class="tg"><input type="checkbox" id="o-realizedRoutes"> Realized routes</label>
     <label class="tg"><input type="checkbox" id="o-continuations"> Continuations</label>
     <label class="tg"><input type="checkbox" id="o-routeFailures"> Adapt / failures</label>
+    <label class="tg"><input type="checkbox" id="o-spaceParcels"> Space parcels</label>
+    <label class="tg"><input type="checkbox" id="o-spaceAccess"> Access ownership</label>
+    <label class="tg"><input type="checkbox" id="o-localCirculation"> Local circulation</label>
+    <label class="tg"><input type="checkbox" id="o-spaceViolations"> Space violations</label>
   </div>
   <div id="info">Hover the map to inspect it.</div>
   <div id="stats"></div>
@@ -96,6 +101,7 @@
 <script src="src/areas.js"></script>
 <script src="src/layout.js"></script>
 <script src="src/structure.js"></script>
+<script src="src/spaceplan.js"></script>
 <script src="src/zones.js"></script>
 <script src="src/interior.js"></script>
 <script src="src/boundary.js"></script>
@@ -108,7 +114,7 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const $ = (id) => document.getElementById(id);
-  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms', 'dnaDebug', 'candidateRoutes', 'selectedRoutes', 'structureNodes', 'obligations', 'realizedRoutes', 'continuations', 'routeFailures'];
+  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms', 'dnaDebug', 'candidateRoutes', 'selectedRoutes', 'structureNodes', 'obligations', 'realizedRoutes', 'continuations', 'routeFailures', 'spaceParcels', 'spaceAccess', 'localCirculation', 'spaceViolations'];
 
   // ---------- state (mirrored into the URL hash so views are shareable)
   const Q = new URLSearchParams(location.hash.slice(1));
@@ -194,6 +200,12 @@
     if (r.block) {
       html += '<br>zone ' + r.block.zone + (r.block.sub.length > 1 ? ' (' + r.block.sub.join(' › ') + ')' : '') + (r.room ? ' &middot; ' + r.room.kind : '');
       if (r.block.flow) html += '<br>flow ' + r.block.flow.kind + ' &middot; ' + r.block.flow.axis.toUpperCase() + ' &middot; ' + r.block.flow.status;
+      if (r.block.routeHierarchy === 'local') html += '<br>local circulation';
+      if (r.block.space) {
+        html += '<br>space ' + r.block.space.role + ' &middot; access ' + r.block.space.access +
+          ' &middot; frontage ' + r.block.space.frontage.toFixed(1) + 'm &middot; depth ' + r.block.space.depth.toFixed(1) + 'm';
+        if (r.block.space.violations.length) html += '<br>violations ' + r.block.space.violations.join(', ');
+      }
       if (r.block.anchorKind) html += '<br>anchor ' + r.block.anchorKind;
     }
     if (r.realizations && r.realizations.length) {
@@ -201,6 +213,10 @@
       const ad = r.realizations.filter((x) => x.status === 'adapted').length;
       const fa = r.realizations.filter((x) => x.status === 'failed').length;
       html += '<br>routes exact ' + ex + ' &middot; adapted ' + ad + ' &middot; failed ' + fa;
+    }
+    if (r.spacePlan) {
+      const d = r.spacePlan.diagnostics;
+      html += '<br>local plan ' + d.parcels + ' parcels &middot; ' + d.localRoutes + ' local halls &middot; ' + d.support + ' support';
     }
     $('info').innerHTML = html;
     if (hoverKey !== T.key) { hoverKey = T.key; dirty = true; }
@@ -286,7 +302,7 @@
   })(lastT);
 
   // ---------- generation-stage presets
-  const DEBUG_KEYS = ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes','obligations','realizedRoutes','continuations','routeFailures'];
+  const DEBUG_KEYS = ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes','obligations','realizedRoutes','continuations','routeFailures','spaceParcels','spaceAccess','localCirculation','spaceViolations'];
   const STAGES = {
     final: [],
     dna: ['dnaDebug'],
@@ -294,7 +310,8 @@
     selected: ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes'],
     obligations: ['selectedRoutes','structureNodes','obligations'],
     realized: ['selectedRoutes','structureNodes','obligations','realizedRoutes','routeFailures'],
-    boundaries: ['realizedRoutes','continuations','routeFailures'],
+    space: ['selectedRoutes','realizedRoutes','spaceParcels','spaceAccess','localCirculation','spaceViolations'],
+    boundaries: ['realizedRoutes','localCirculation','continuations','routeFailures'],
     full: DEBUG_KEYS.slice()
   };
   function applyStage(name) {

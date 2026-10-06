@@ -5,8 +5,7 @@
  * interiors: a door is only placed where there is floor on both sides
  * (probed 0.6 m in from a thin wall, 1.6 m from a thick one). Door spots
  * prefer corridors, hallways and aisles on both sides, so circulation lines
- * up across territories, and avoid maintenance strips unless the boundary
- * belongs to a band. Matching DNA circulation contracts are stronger: the
+ * up across territories. Matching selected-route contracts are stronger: the
  * overlapping corridor width becomes a structural continuation with no seam
  * wall or redundant door. Open boundaries have no wall; every pair of rooms
  * that faces across them is linked.
@@ -137,7 +136,7 @@
           let score = rng.f();
           if (CIRC.has(IA.rooms[r[0]].kind)) score += 1.5;
           if (CIRC.has(IB.rooms[r[1]].kind)) score += 1.5;
-          if ((sa || sb) && !info.band) score -= 4;
+          if (sa || sb) score -= 4;
           c.push({ si, t, r, score });
         }
       }
@@ -155,7 +154,7 @@
       pick(gather(d0, false), n, 'door');
       if (!chosen.length) for (const d of [1.4, 2.2, 3.2]) { pick(gather(d, false), 1, 'passage'); if (chosen.length) break; }
       if (!chosen.length) W.stats.doorFailures++;
-    } else if (info.service) pick(gather(d0, true), 1, 'service');   // forbidden pair: maybe one door into the band
+    }
 
     // Door gaps are added to the structural continuation gaps above.
     for (const c of chosen) {

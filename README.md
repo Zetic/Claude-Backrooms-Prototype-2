@@ -9,9 +9,9 @@ An infinite, deterministic 2D map of a Backrooms-style world. Open
   you visit it in and whatever the caches hold. Text seeds work too.
 - **Gap-free.** Every square metre belongs to exactly one territory, so every
   territory always borders other territories.
-- **Rule-driven.** How two areas meet (an open floor, a wall with doors, a
-  thick wall, or a maintenance band between them) comes from a pair-rule
-  table, not from chance.
+- **Rule-driven.** How two areas meet (open floor, ordinary wall, strong
+  transition wall, doorway) comes from a deterministic pair-rule table.
+  Maintenance is never inserted merely to trace an area boundary.
 
 ## Controls
 
@@ -21,9 +21,9 @@ An infinite, deterministic 2D map of a Backrooms-style world. Open
 | Zoom | mouse wheel, pinch, `+` / `-` |
 | Area map | `M` or the toggle |
 | Overlays | Territories, Super-cells (the lattice), Room graph |
-| Generation stage | DNA → candidate lattice → selected structure → obligations → realized routes → boundary reconciliation |
-| Debug overlays | DNA regions, candidate/selected routes, nodes/anchors, obligations, realized routes, continuations, adaptations/failures |
-| Inspect | hover: area, DNA, structure plan, territory, zone, route realization, room kind |
+| Generation stage | DNA → candidate lattice → selected structure → obligations → realized routes → local space plan → boundary reconciliation |
+| Debug overlays | DNA/structure, obligations, realized routes, local circulation, space parcels/access/violations, continuations |
+| Inspect | hover: area, DNA, structure, route realization, local-space geometry/access, zone, room |
 
 The URL hash keeps the seed, position, zoom and toggles
 (`#seed=31337&x=0&y=0&z=2&rooms=1`), so any view can be shared or bookmarked.
@@ -34,10 +34,11 @@ The URL hash keeps the seed, position, zoom and toggles
 Areas          what kind of place: Backrooms, Offices, Hotel, ...       areas.js
   DNA            persistent architectural identity for a district/region areas.js
     Structure      major/secondary/service circulation + anchors          structure.js
-      Territories   20-60 m ownership blocks that tile the plane          layout.js
-        Obligations  clipped pieces of the district structure              structure.js
-          Rooms      local realization and infill                          interior.js, zones.js
-Boundaries     reconcile shared structures and ordinary doors             boundary.js
+      Territories    20-60 m ownership blocks that tile the plane         layout.js
+        Obligations   clipped pieces of the district structure             structure.js
+          Local plan  access catchments, local halls, usable parcels       spaceplan.js
+            Archetypes + detailed rooms                                    zones.js, interior.js
+Boundaries      reconcile shared structures and ordinary doors             boundary.js
 ```
 
 Territories are ownership/build units. They no longer decide whether a major
@@ -73,8 +74,9 @@ chunky and rectilinear rather than grid-like.
   non-pocket neighbour.
 
 Area roles: Backrooms is *base*; Offices, Hotel, Poolrooms and Parking are
-*districts*; Home is a *pocket*; Maintenance is a *network* (pockets plus
-bands).
+*districts*; Home and Maintenance are *pockets*. Maintenance exists as real
+territories/plant spaces only. It is not generated as a strip around mixed
+areas or along super-cell edges.
 
 
 ### Architecture DNA: continuity across territories
@@ -154,50 +156,68 @@ Every pair of touching territories looks up `rule(areaA, areaB)`:
 | hotel - offices | - | - | 40 m, 1 | 40% | - |
 | offices - parking | - | 100% | 40 m, 1 | 60% | - |
 | hotel - poolrooms | - | 100% | 40 m, 1 | 60% | - |
-| offices - poolrooms, parking - poolrooms, hotel - parking | **forbidden** | | | | |
+| offices - poolrooms | - | 100% | 52 m, 1 | 55% | 5% |
+| parking - poolrooms | - | 100% | 46 m, 1 | 45% | 20% |
+| hotel - parking | - | 100% | 55 m, 1 | 60% | 5% |
 
-- **Forbidden pairs never get a door.** One side gives up a 3-4 m maintenance
-  band along the shared edge. If neither side is deep enough for a band, the
-  pair gets a thick wall instead. About a third of these bands have one service
-  door.
-- **"Doorless if safe"** means the pair is *optional*. It drops its doors only
-  if a detour of at most 5 territories exists over pairs that do keep theirs,
-  so connectivity is never lost. Contacts shorter than 8 m are always optional.
-  Contacts with no stretch of at least 3.2 m (corner touches) never get a door.
-- **Service lines:** runs of three super-cell edges sometimes (22%) become long
-  maintenance corridors. They are bands carved along one side, and they link
-  to the maintenance network.
+The last three pairs previously carved continuous 3-4 m Maintenance bands
+along their area boundary. That feature has been removed. They now meet
+directly at a strong transition wall with sparse localized access. Random
+super-cell-edge Maintenance/service bands were removed as well.
 
-All of these decisions are made per pair from local information only, and they
-are cached by the pair's key.
+**"Doorless if safe"** means a pair is optional. It drops its doors only if a
+detour of at most five territories exists over pairs that retain connectivity,
+so optional edges cannot recursively justify one another. Contacts shorter
+than 8 m are optional; contacts without at least 3.2 m of usable edge become
+wall-only corner contacts.
 
-### 5. Interiors (interior.js, zones.js)
+All pair decisions are canonical and cached by the territory-pair key.
 
-For each territory:
+### 5. Local space planning and interiors (spaceplan.js, interior.js, zones.js)
 
-1. **Carve bands.** Remove the maintenance strips the plan assigns to this
-   territory.
-2. **Realize planned structure, when present.** Hotel/Office territory
-   obligations are cut into corridor/service blocks first. Junctions retain
-   all overlapping route identities. Adapted routes dogleg locally while
-   preserving their planned boundary obligations. Remaining floor is infill.
-   Areas without a structure plan use their original local style:
-   - *irregular* (Backrooms): one great hall, a few big rooms, or many
-     smaller ones.
-   - *hall* (Poolrooms, Parking): a main hall plus a service strip.
-   - *house* (Home): one to three houses with gardens; hallway, front and
-     back rows of rooms.
-   - *utility* (Maintenance): plant rooms.
-3. **Fill each block with a zone type.** Types come from the area's catalogue
-   weights, avoiding the types of neighbouring blocks. Examples: open hall,
-   split, ring, office, warren, stalls, store, gallery, courtyard, pools,
-   parking, machinery. Large single-rect territories occasionally become
-   *landmarks*, such as a grand hall, atrium, theatre, long gallery or pool hall.
-4. **Connect.** A random spanning tree over the blocks, plus loops. Corridor
-   walls are tried first and service strips last. A door is only placed where
-   both sides are walkable, and never into an en-suite bathroom. If a block
-   would otherwise be cut off, a doorway is carved through solid mass as a
-   last resort.
+For Hotel/Office territories covered by a district structure plan, generation
+now separates **space planning** from **semantic room generation**:
+
+1. Realize district route obligations as exact/adapted/failed geometry.
+2. Analyze the residual floor as rectangles adjacent to circulation.
+3. If a region is too deep to be served directly, add a bounded local branch
+   that physically starts on its serving corridor. Derived local halls form a
+   tree rather than disconnected parallel strips.
+4. Subdivide the served mass into architectural parcels based on frontage,
+   depth, aspect ratio and the area's DNA module.
+5. Classify unsuitable or unserved residuals as support space instead of
+   forcing a dense room archetype into them.
+6. Only then select a semantic archetype compatible with the parcel.
+
+The planner is generic. Current policies exist for Hotel, Offices, Backrooms,
+Poolrooms, Parking, Home and Maintenance; structured Hotel/Office interiors
+are the first consumers. The important contract is independent of a particular
+room name: dense cellular archetypes require intentional access and a
+compatible geometry envelope.
+
+This prevents arbitrary residual rectangles from stretching their assigned
+semantic type. For example, `guest` is no longer accepted for any rectangle;
+it is one archetype constrained by the same generic parcel metadata used by
+the selector. Oversized/deep residual mass creates local circulation or becomes
+support/open architecture instead of being interpreted as one stretched room.
+
+Planning is intentionally bounded:
+
+- at most 64 parcels per local-plan part;
+- at most 4 derived local routes;
+- at most 4 local service-depth levels;
+- direct rectangle/segment/graph operations only;
+- no raster flood-fill, open-ended search or regenerate-until-valid loop.
+
+Areas without district structure retain their established local grammar:
+Backrooms irregular subdivision, Poolrooms/Parking halls, Home houses/gardens
+and Maintenance plant-room pockets. The generic planner/policy API is available
+for those area-specific structure systems when they gain district-scale plans.
+
+After planning, `zones.js` supplies semantic detail (office, guest, open,
+gallery, courtyard, machinery, pools, parking, etc.), and `interior.js`
+connects the resulting block graph with circulation-first spanning connections
+and loops.
 
 ### 6. Boundaries (boundary.js)
 
@@ -253,13 +273,15 @@ The **Generation stage** selector exposes the calculation in order:
 2. DNA candidate circulation lattice;
 3. selected district routes plus junctions/anchors;
 4. clipped territory obligations;
-5. exact/adapted/failed local realization;
-6. boundary continuations.
+5. exact/adapted/failed district-route realization;
+6. local space planning;
+7. boundary reconciliation.
 
-Individual overlays can also be combined manually. Selected route hierarchy is
-shown separately for major, secondary and service circulation. Realized
-`exact` routes and `adapted` routes have distinct outlines; failed
-obligations are marked with their failure reason at sufficient zoom.
+Local-space overlays expose the next decision layer independently: parcel
+boundaries, access ownership, derived local circulation and geometry/access
+violations. Selected district-route hierarchy remains separately visible for
+major, secondary and service circulation. Debug drawing consumes cached
+generation records; enabling an overlay does not rerun planning.
 
 ## Data API (for a game)
 
@@ -272,8 +294,8 @@ W.final(T)                                     // area name of territory T
 W.architecture(T)                              // persistent architecture DNA
 W.structure(T)                                 // district structure plan for this territory
 W.structuresIn(x0, y0, x1, y1)                 // visible Hotel/Office structure plans
-W.interior(T)                                  // -> { obligations, realizations, anchors, blocks, zones,
-                                               //      rooms, links, walls, minor, masses, ... }
+W.interior(T)                                  // -> { obligations, realizations, spacePlan, anchors,
+                                               //      blocks, zones, rooms, links, walls, ... }
 W.boundary(A, B)                               // -> { wall, semantic, walls, doors, continuations, links }
 W.inspect(x, y)                                // area / DNA / structure / route / territory / room at a point
 BR.pairInfo(W, A, B)                           // the rule decision for a pair
@@ -290,9 +312,10 @@ Geometry is in integer metres, with no rotations. Wall lists are flat
 | `areas.js` `AREAS` | per area: colour, split sizes, style, zone weights, landmarks, door/loop/open probabilities, pocket frequency and size |
 | `areas.js` `RULES` | the pair-rule table above |
 | `areas.js` `CFG` | district lattice spacing, density, warp |
-| `layout.js` `CFG` | super-cell size, edge offsets, ear merge thresholds, service-line odds, bypass depth |
+| `layout.js` `CFG` | super-cell size, edge offsets, ear merge thresholds, bypass depth |
 | `structure.js` | district route selection, hierarchy, branch/service structure and special-space anchoring |
-| `zones.js` | zone generators and their size fits |
+| `spaceplan.js` | access/depth/frontage policies and hard parcel/local-route caps |
+| `zones.js` | semantic generators plus archetype compatibility filters |
 | `render.js` | colours, LOD thresholds, tile cache size and planner-debug overlays |
 
 ## Tests
@@ -313,17 +336,22 @@ The suite also checks that different seeds give different maps.
 
 **Structure:**
 
-- The tiling is exact: no gaps or overlaps at about 900k sample points, and
-  the areas sum correctly.
-- Forbidden pairs always have a band or a thick wall, and no normal doors.
-- Bands are maintenance floor along their whole length.
-- Pockets sit inside one host and have a door.
-- District structure plans remain deterministic through aggressive cache eviction.
-- Every sampled district route plan is one connected route graph.
-- Major, secondary and service circulation are all generated.
-- Territory route obligations are explicitly exact, adapted or failed.
-- Planned special-space anchors are realized against local architecture.
-- Selected routes cross technical territory seams without a wall or redundant door.
+- The territorial tiling remains exact: no gaps or overlaps at about 900k
+  sampled points, and area sums match exactly.
+- Former Maintenance-band area pairs use direct strong transitions.
+- Zero automatic Maintenance strips are generated.
+- Maintenance/Home pockets remain contained in one host and retain access.
+- District structure plans remain deterministic through aggressive cache
+  eviction and form connected major/secondary/service route graphs.
+- Territory route obligations remain explicit as exact/adapted/failed.
+- Local space planning obeys its hard parcel/route caps.
+- Occupiable parcels satisfy their access/geometry constraints.
+- Unserved floor never receives a dense cellular archetype.
+- Semantic archetypes are rejected when incompatible with parcel geometry;
+  the guest-room case is retained as a regression check rather than a special
+  planning path.
+- Selected routes cross technical territory seams without wall overlap or
+  redundant seam doors.
 - No door placement fails.
 - Every room is reachable.
 
@@ -337,10 +365,11 @@ All checks pass for seeds 31337, 7, 12345, 99 and 4242.
   is the part this prototype is about.
 - Rooms are axis-aligned. Rotated wings from v1 were dropped, because
   integer-metre geometry keeps the tiling and door probing exact.
-- District structure planning currently applies to **Hotel and Offices**.
-  Poolrooms and Parking still use local hall generators; their future
-  cross-territory DNA should control pool/walkway and parking/aisle structures
-  rather than reusing the Hotel/Office corridor grammar.
+- District structure planning and the new local-space realization path
+  currently apply to **Hotel and Offices**. The local planner itself is
+  area-generic. Poolrooms and Parking still use their existing hall grammars;
+  future district planners should expose pool/walkway and parking/aisle
+  obligations to the same local-space layer rather than copying Hotel logic.
 - Failed route obligations are retained and visible in the debugger. A future
   planner can reroute around a cluster of failures at district scope instead
   of relying only on local dogleg adaptation.
