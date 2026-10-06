@@ -6,7 +6,7 @@
  *
  *   area map (far zoom, or the Area map toggle): territories as flat area
  *     colours, territory outlines, heavier lines where areas meet, area names
- *   detail (zoom >= 1.1): floors, maintenance strips, structure (pools,
+ *   detail (zoom >= 1.1): floors, internal service circulation, structure (pools,
  *     solids, round rooms, light wells), then by zoom: walls, pillars,
  *     furniture, partitions, stair treads / bay lines; territory boundaries
  *     drawn as one shared wall each - thin, heavier between areas, thick 2 m
