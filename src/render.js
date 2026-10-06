@@ -254,7 +254,7 @@
 
   // ---------------------------------------------------- generation debugger
   function drawGenerationDebug(ctx, W, view, opts) {
-    const any = opts.dnaDebug || opts.candidateRoutes || opts.selectedRoutes || opts.structureNodes ||
+    const any = opts.manifestations || opts.programRegions || opts.dnaDebug || opts.candidateRoutes || opts.selectedRoutes || opts.structureNodes ||
       opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures ||
       opts.spaceParcels || opts.spaceAccess || opts.localCirculation || opts.spaceViolations;
     if (!any) return;
@@ -268,7 +268,34 @@
       ctx.stroke();
     };
     const rect=(q)=>{ctx.strokeRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);};
+    const ellipse=(L)=>{ctx.beginPath();ctx.ellipse(X(L.cx),Y(L.cy),L.rx*zoom,L.ry*zoom,0,0,Math.PI*2);ctx.stroke();};
     const plans=W.structuresIn(cx-hw-80,cy-hh-80,cx+hw+80,cy+hh+80);
+    const manifests=(opts.manifestations||opts.programRegions)?W.manifestationsIn(cx-hw-80,cy-hh-80,cx+hw+80,cy+hh+80):[];
+
+    if(opts.manifestations){
+      ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,235,100,.92)';ctx.fillStyle='rgba(255,245,170,.96)';
+      ctx.font='11px ui-monospace, monospace';
+      for(const M of manifests){
+        ctx.setLineDash([]);
+        for(const L of M.lobes)ellipse(L);
+        ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(255,120,120,.9)';
+        for(const H of M.holes)ellipse(H);
+        ctx.setLineDash([]);ctx.strokeStyle='rgba(255,235,100,.92)';
+        if(zoom>=0.55)ctx.fillText(M.type+' · '+M.form+' · '+M.scale,X(M.cx)+5,Y(M.cy)-5);
+      }
+    }
+    if(opts.programRegions){
+      ctx.font='10px ui-monospace, monospace';
+      for(const M of manifests){
+        const P=W.programBy(M.type,M.id);if(!P)continue;
+        for(const R of P.regions){
+          const x=X(R.x),y=Y(R.y),rr=Math.max(3,Math.min(9,R.radius*zoom*.14));
+          ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);
+          ctx.fillStyle=R.role==='core'?'rgba(255,255,255,.95)':R.role==='void'?'rgba(255,95,95,.92)':'rgba(90,220,255,.9)';ctx.fill();
+          if(zoom>=.8){ctx.fillStyle='rgba(230,250,255,.95)';ctx.fillText(R.role,x+rr+3,y-rr);}
+        }
+      }
+    }
 
     if(opts.dnaDebug){
       ctx.setLineDash([7,5]);ctx.lineWidth=1.4;ctx.strokeStyle='rgba(210,120,255,.85)';
