@@ -98,6 +98,7 @@
         seen.add(r[0] + ',' + r[1]);
         link(r, s, t, 'opening', 0);
       }
+      out.semantic = info.fa !== info.fb ? 'transition' : 'open';
       return out;
     }
 
@@ -176,6 +177,8 @@
       for (const g of G) { push(t, Math.max(t, g[0])); t = Math.max(t, g[1]); }
       push(t, s.s1);
     });
+    out.semantic = out.continuations.length ? 'continuation' : out.cross ? 'transition' :
+      out.doors.length ? 'doorway' : 'separation';
     return out;
   }
 
