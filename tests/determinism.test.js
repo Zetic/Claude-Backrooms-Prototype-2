@@ -17,7 +17,7 @@
  *   - every room in a large region is reachable from every other.
  */
 const path = require('path');
-for (const f of ['core', 'areas', 'layout', 'structure', 'spaceplan', 'zones', 'interior', 'boundary', 'world'])
+for (const f of ['core', 'areas', 'manifestation', 'layout', 'structure', 'spaceplan', 'zones', 'interior', 'boundary', 'world'])
   require(path.join(__dirname, '..', 'src', f + '.js'));
 const BR = globalThis.BR;
 
