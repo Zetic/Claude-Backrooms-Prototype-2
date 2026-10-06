@@ -138,6 +138,11 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   check('manifestations are deterministic independent of caches', stable&&programStable);
   check('generic structural programs span semantic areas and roles', programAreas.size>=3&&roles.size>=6&&coreMissing===0,
     `${programAreas.size} areas, ${roles.size} roles, ${coreMissing} missing cores`);
+  const districtRoles=BR.AREA_ORDER.filter((k)=>BR.AREAS[k].role==='district');
+  check('manifestation and structure participation is role-driven',
+    districtRoles.every((k)=>BR.MANIFEST_TYPES[k]>0&&BR.STRUCTURE_AREAS.has(k)) &&
+      Object.keys(BR.MANIFEST_TYPES).length===districtRoles.length,
+    `${districtRoles.length} configured district-role areas`);
 }
 
 // ---------------------------------------------------- architecture DNA
