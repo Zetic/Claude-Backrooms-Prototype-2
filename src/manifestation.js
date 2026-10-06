@@ -61,7 +61,7 @@
     const r=new Rng(hash4(seed,a,b,S.MANIFEST));
     const exists=r.f()<cfg.districtP;
     const cx=(a+0.15+0.7*r.f())*C, cy=(b+0.15+0.7*r.f())*C;
-    const mt=BR.MANIFEST_TYPES||{}, fallbackType=Object.keys(mt)[0]||'backrooms';
+    const mt=BR.MANIFEST_TYPES||{}, fallbackType=Object.keys(mt)[0]||BR.BASE_AREA;
     const type=weighted(r,mt,fallbackType);
     const A=BR.AREAS[type]||{}, M=A.manifestation||{};
     const form=weighted(r,M.forms||DEFAULT_FORMS,'compact');
@@ -153,7 +153,7 @@
       const d=manifestationDistance(M,wx,wy);
       if(d<best){best=d;hit=M;}
     }
-    if(!hit)return {area:'backrooms',district:null,manifestation:null,form:'substrate',scale:'regional'};
+    if(!hit)return {area:BR.BASE_AREA,district:null,manifestation:null,form:'substrate',scale:'regional'};
     return {area:hit.type,district:hit.id,manifestation:hit.id,form:hit.form,scale:hit.scale};
   }
 
