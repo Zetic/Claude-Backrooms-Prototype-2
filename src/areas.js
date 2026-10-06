@@ -22,7 +22,7 @@
   const BR = root.BR;
   const { hash4, Rng, fbm, contrast, clamp } = BR;
 
-  const S = { DIST: 0xd157, WARPX: 0x3a91, WARPY: 0x3a92, WARM: 0xc01a, BEIGE: 0xbe16 };
+  const S = { DIST: 0xd157, WARPX: 0x3a91, WARPY: 0x3a92, WARM: 0xc01a, BEIGE: 0xbe16, DNA: 0xd6a1 };
 
   // ----------------------------------------------------------------- areas
   // split   - territory grain: tmin/tmax side, split probability, max aspect,
@@ -151,6 +151,73 @@
     return { area, district };
   }
 
+
+  // ------------------------------------------------------ architecture DNA
+  // Territories are generation ownership units, not architectural identity
+  // units. A district (or a coarse base-area region) therefore owns a stable
+  // DNA record that nearby territories inherit. Local territory RNG still
+  // varies individual rooms, while the DNA preserves corridor rhythm,
+  // preferred axis, module size, density and zone tendencies across seams.
+  const DNA_REGION = 760;
+
+  function architectureRegion(T, area) {
+    const A = AREAS[area] || AREAS.backrooms;
+    if (T.district && (A.role === 'district' || A.role === 'pocket' || A.role === 'network')) {
+      const p = T.district.split(',');
+      return { key: 'district:' + area + ':' + T.district, a: +p[0], b: +p[1], district: true };
+    }
+    const a = Math.floor(T.cx / DNA_REGION), b = Math.floor(T.cy / DNA_REGION);
+    return { key: 'field:' + area + ':' + a + ',' + b, a, b, district: false };
+  }
+
+  function architectureDNA(W, T, area) {
+    area = area || T.base || 'backrooms';
+    const reg = architectureRegion(T, area);
+    if (W.dna && W.dna.has(reg.key)) {
+      const hit = W.dna.get(reg.key);
+      W.dna.delete(reg.key); W.dna.set(reg.key, hit);
+      return hit;
+    }
+
+    const areaId = Math.max(1, ORDER.indexOf(area) + 1);
+    const rng = new Rng(hash4(W.seed, reg.a, reg.b, S.DNA ^ Math.imul(areaId, 0x9e37)));
+    let majorAxis;
+    if (reg.district && T.district) {
+      const d = districtSeed(W.seed, reg.a, reg.b);
+      const ratio = d.rx / Math.max(1, d.ry);
+      majorAxis = ratio > 1.12 ? 'x' : ratio < 0.89 ? 'y' : (rng.f() < 0.5 ? 'x' : 'y');
+    } else majorAxis = rng.f() < 0.5 ? 'x' : 'y';
+
+    const corridorWidth = rng.f() < (area === 'hotel' ? 0.78 : 0.68) ? 2 : 3;
+    const module = area === 'hotel' ? rng.int(4, 6) : area === 'offices' ? rng.int(4, 7) : rng.int(4, 8);
+    const spineSpacing = area === 'hotel' ? rng.int(26, 38) : area === 'offices' ? rng.int(30, 48) : rng.int(28, 52);
+    const crossSpacing = area === 'hotel' ? rng.int(42, 64) : area === 'offices' ? rng.int(36, 58) : rng.int(40, 68);
+    const A = AREAS[area] || AREAS.backrooms;
+    const zoneWeights = {};
+    for (const k in (A.zones || {})) zoneWeights[k] = A.zones[k] * rng.range(0.78, 1.22);
+
+    const dna = {
+      key: reg.key, area, majorAxis, corridorWidth, module,
+      spineSpacing, spinePhase: rng.int(0, spineSpacing - 1),
+      crossSpacing, crossPhase: rng.int(0, crossSpacing - 1),
+      crossChance: area === 'hotel' ? rng.range(0.28, 0.52) : area === 'offices' ? rng.range(0.38, 0.68) : rng.range(0.25, 0.55),
+      roomScale: rng.range(0.91, 1.09),
+      openness: rng.range(0.82, 1.18),
+      loopiness: rng.range(0.82, 1.18),
+      wideness: rng.range(0.82, 1.18),
+      pillarDensity: rng.range(0.88, 1.12),
+      landmarkBias: rng.range(0.75, 1.25),
+      specialBias: rng.range(0.82, 1.18),
+      zoneWeights
+    };
+
+    if (W.dna) {
+      W.dna.set(reg.key, dna);
+      if (W.dna.size > W.limits.dna) W.evict(W.dna, Math.max(1, W.limits.dna >> 2));
+    }
+    return dna;
+  }
+
   // ---------------------------------------------------------------- colour
   // Backrooms palette, sampled from the reference map; slow fields drift it
   // between cream, yellow, mustard, beige and peach.
@@ -169,5 +236,5 @@
     return BR.scaleRgb(BR.hexToRgb(AREAS[area].color), 0.98 + 0.04 * jit);
   }
 
-  Object.assign(BR, { AREAS, AREA_ORDER: ORDER, POCKETS, RULES, rule, isPocket, areaAt, areaColor, districtSeed, AREA_CFG: CFG });
+  Object.assign(BR, { AREAS, AREA_ORDER: ORDER, POCKETS, RULES, rule, isPocket, areaAt, areaColor, districtSeed, architectureDNA, ARCHITECTURE_DNA_REGION: DNA_REGION, AREA_CFG: CFG });
 })(typeof window !== 'undefined' ? window : globalThis);

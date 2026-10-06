@@ -24,16 +24,27 @@
 (function (root) {
   'use strict';
   const BR = root.BR;
-  const { Rng, hash4, makeUF } = BR;
+  const { Rng, hash4, makeUF, clamp } = BR;
 
   const ROOM = 0, HALL = 1, BLOCK = 4, SERVICE = 5;
   const S = { INT: 0x201, LMK: 0x202 };
 
-  function makeStyle(A, rng) {
-    const r = (v, d) => (Array.isArray(v) ? rng.range(v[0], v[1]) : v !== undefined ? v : d);
+  function makeStyle(A, rng, dna) {
+    const mid = (v, d) => (Array.isArray(v) ? (v[0] + v[1]) / 2 : v !== undefined ? v : d);
+    const inherited = (spec, d, mul, jitter) => {
+      let v = mid(spec, d) * (mul === undefined ? 1 : mul) * rng.range(1 - jitter, 1 + jitter);
+      if (Array.isArray(spec)) v = clamp(v, spec[0], spec[1]);
+      return v;
+    };
     const st = {
-      zones: A.zones || {}, roomScale: r(A.roomScale, 1), pillars: r(A.pillars, 0.5),
-      hallW: rng.f() < 0.75 ? 2 : 3, pOpen: r(A.pOpen, 0.2), pLoop: r(A.pLoop, 0.25), pWide: r(A.pWide, 0.15),
+      dna,
+      zones: dna && Object.keys(dna.zoneWeights).length ? dna.zoneWeights : (A.zones || {}),
+      roomScale: inherited(A.roomScale, 1, dna ? dna.roomScale : 1, 0.04),
+      pillars: inherited(A.pillars, 0.5, dna ? dna.pillarDensity : 1, 0.05),
+      hallW: dna ? dna.corridorWidth : (rng.f() < 0.75 ? 2 : 3),
+      pOpen: inherited(A.pOpen, 0.2, dna ? dna.openness : 1, 0.06),
+      pLoop: inherited(A.pLoop, 0.25, dna ? dna.loopiness : 1, 0.06),
+      pWide: inherited(A.pWide, 0.15, dna ? dna.wideness : 1, 0.06),
       doorW: rng.range(1.2, 1.8), pStub: rng.range(0.15, 0.5), pBspCorr: rng.range(0.05, 0.35)
     };
     const ra = rng.f();
@@ -64,6 +75,38 @@
     };
   }
 
+  /** Frame pinned to a world axis. DNA uses this so adjacent territories can
+   * continue the same architectural orientation instead of each selecting its
+   * own long side independently. */
+  function axisFrame(q, axis) {
+    const w = q[2] - q[0], h = q[3] - q[1], horiz = axis !== 'y';
+    return {
+      horiz, U: horiz ? w : h, V: horiz ? h : w,
+      R: (u0, v0, u1, v1) => (horiz ? [q[0] + u0, q[1] + v0, q[0] + u1, q[1] + v1] : [q[0] + v0, q[1] + u0, q[0] + v1, q[1] + u1])
+    };
+  }
+
+  function preferredFrame(q, axis, minU, minV) {
+    if (!axis) return uvFrame(q);
+    const F = axisFrame(q, axis);
+    return F.U >= minU && F.V >= minV ? F : uvFrame(q);
+  }
+
+  /** Pick the nearest district-global line that can fit inside [lo,hi]. */
+  function alignedOffset(world0, lo, hi, spacing, phase) {
+    if (!(spacing > 0) || hi < lo) return null;
+    const target = world0 + (lo + hi) / 2;
+    const k0 = Math.round((target - phase) / spacing);
+    let best = null, bd = Infinity;
+    for (let dk = -2; dk <= 2; dk++) {
+      const local = phase + (k0 + dk) * spacing - world0;
+      if (local < lo || local > hi) continue;
+      const d = Math.abs(local - (lo + hi) / 2);
+      if (d < bd) { bd = d; best = Math.round(local); }
+    }
+    return best;
+  }
+
   /** Cut [0,U) into chunks of length in [a,b] (last chunk absorbs a short remainder). */
   function chunks(U, rng, a, b) {
     const out = [];
@@ -91,13 +134,23 @@
 
   /** Corridor spine with blocks either side; optional cross corridor. */
   function spine(q, rng, st, A, out, o) {
-    const F = uvFrame(q), U = F.U, V = F.V, dm = o.depthMin, cw = o.cw || rng.int(2, 3);
+    const cw = o.cw || rng.int(2, 3);
+    const F = preferredFrame(q, o.axis, 14, o.depthMin + cw), U = F.U, V = F.V, dm = o.depthMin;
     if (U < 14 || V < dm + cw) { out.push(blk(q, BLOCK)); return; }
+    const perp0 = F.horiz ? q[1] : q[0];
     let v0;
-    if (V >= 2 * dm + cw) v0 = dm + Math.round((V - 2 * dm - cw) * rng.range(0.25, 0.75));
-    else v0 = rng.f() < 0.5 ? 0 : V - cw;
+    if (V >= 2 * dm + cw) {
+      v0 = o.align ? alignedOffset(perp0, dm, V - dm - cw, o.spineSpacing, o.spinePhase) : null;
+      if (v0 === null) v0 = dm + Math.round((V - 2 * dm - cw) * rng.range(0.25, 0.75));
+    } else v0 = rng.f() < 0.5 ? 0 : V - cw;
     out.push(blk(F.R(0, v0, U, v0 + cw), HALL));
-    const cross = U >= 46 && rng.f() < 0.55 ? Math.round(U * rng.range(0.3, 0.7)) : -1;
+
+    let cross = -1;
+    if (U >= 46 && rng.f() < (o.crossChance === undefined ? 0.55 : o.crossChance)) {
+      const along0 = F.horiz ? q[0] : q[1];
+      cross = o.align ? alignedOffset(along0, Math.round(U * 0.25), Math.round(U * 0.75) - cw, o.crossSpacing, o.crossPhase) : null;
+      if (cross === null) cross = Math.round(U * rng.range(0.3, 0.7));
+    }
     const bands = [];
     if (v0 > 0) bands.push([0, v0]);
     if (v0 + cw < V) bands.push([v0 + cw, V]);
@@ -117,11 +170,21 @@
     }
   }
 
-  LAY.spine = (q, rng, st, A, out) => spine(q, rng, st, A, out, { depthMin: A.depthMin, chunk: A.chunk });
+  LAY.spine = (q, rng, st, A, out) => {
+    const D = st.dna;
+    const chunk = D ? [Math.max(A.chunk[0], D.module * 2), Math.min(A.chunk[1], D.module * 4)] : A.chunk;
+    spine(q, rng, st, A, out, {
+      depthMin: A.depthMin, chunk,
+      axis: D && D.majorAxis, cw: D && D.corridorWidth, align: !!D,
+      spineSpacing: D && D.spineSpacing, spinePhase: D && D.spinePhase,
+      crossSpacing: D && D.crossSpacing, crossPhase: D && D.crossPhase,
+      crossChance: D && D.crossChance
+    });
+  };
 
   /** Hotel: mostly guest-room wings, sometimes a ballroom, garden court or a lobby at the end of a wing. */
   LAY.hotel = (q, rng, st, A, out) => {
-    const F = uvFrame(q), [w, h] = dims(q), kind = rng.weighted({ wing: 4.5, ballroom: Math.min(w, h) >= 16 ? 1.6 : 0, garden: Math.min(w, h) >= 20 ? 1.1 : 0 });
+    const D = st.dna, F = preferredFrame(q, D && D.majorAxis, 14, A.depthMin + (D ? D.corridorWidth : 2)), [w, h] = dims(q), sb = D ? D.specialBias : 1, kind = rng.weighted({ wing: 4.5 / sb, ballroom: Math.min(w, h) >= 16 ? 1.6 * sb : 0, garden: Math.min(w, h) >= 20 ? 1.1 * sb : 0 });
     if (kind === 'ballroom') { out.push(blk(q, BLOCK, rng.f() < 0.6 ? 'open' : 'gallery')); return; }
     if (kind === 'garden') { out.push(blk(q, BLOCK, 'courtyard')); return; }
     if (F.U >= 40 && rng.f() < 0.35) {
@@ -130,7 +193,14 @@
       q = F.R(L, 0, F.U, F.V);
     }
     const before = out.length;
-    spine(q, rng, st, A, out, { depthMin: A.depthMin, chunk: A.chunk, guest: true });
+    const chunk = D ? [Math.max(A.chunk[0], D.module - 1), Math.min(A.chunk[1], D.module + 1)] : A.chunk;
+    spine(q, rng, st, A, out, {
+      depthMin: A.depthMin, chunk, guest: true,
+      axis: D && D.majorAxis, cw: D && D.corridorWidth, align: !!D,
+      spineSpacing: D && D.spineSpacing, spinePhase: D && D.spinePhase,
+      crossSpacing: D && D.crossSpacing, crossPhase: D && D.crossPhase,
+      crossChance: D && D.crossChance
+    });
     // suites: merge some pairs of neighbouring guest rooms
     for (let i = before; i + 1 < out.length; i++) {
       const a = out[i], b = out[i + 1];
@@ -348,8 +418,8 @@
   // ----------------------------------------------------------------- build
   function buildInterior(W, T) {
     const rng = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.INT));
-    const area = W.final(T), A = BR.AREAS[area];
-    const st = makeStyle(A, rng);
+    const area = W.final(T), A = BR.AREAS[area], dna = BR.architectureDNA(W, T, area);
+    const st = makeStyle(A, rng, dna);
     const { rects, strips } = BR.carveBands(W, T);
     const blocks = [];
     for (const s of strips) blocks.push(blk(s.q, SERVICE));
@@ -357,7 +427,7 @@
     const r0 = rects[0], [w0, h0] = dims(r0);
     let landmark = null;
     if (A.landmarks && T.rects.length === 1 && !strips.length && Math.min(w0, h0) >= 24 && w0 * h0 >= 650 &&
-      new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK)).f() < A.landmarkP) {
+      new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK)).f() < A.landmarkP * dna.landmarkBias) {
       landmark = new Rng(hash4(W.seed, T.i, T.j, T.k * 64 + S.LMK + 1)).weighted(A.landmarks);
       if (landmark === 'longGallery' && Math.max(w0, h0) < 2.2 * Math.min(w0, h0)) landmark = 'grandHall';
     }
@@ -369,7 +439,7 @@
       LAY[A.style](q, rng, st, A, blocks);
     });
     // zones, avoiding the types of neighbouring blocks
-    const I = { key: T.key, area, landmark, blocks, zones: [], rooms: [], links: [], walls: [] };
+    const I = { key: T.key, area, landmark, dna, dnaKey: dna.key, blocks, zones: [], rooms: [], links: [], walls: [] };
     const nb = blocks.map(() => []);
     for (let i = 0; i < blocks.length; i++) for (let j = i + 1; j < blocks.length; j++)
       if (sharedSeg(blocks[i], blocks[j])) { nb[i].push(j); nb[j].push(i); }

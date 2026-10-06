@@ -62,7 +62,7 @@ const base = snapshot(new BR.World(SEED), ...R);
   check('visit order does not matter', snapshot(W, ...R) === base);
 }
 {
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
   check('cache eviction does not matter', snapshot(W, ...R) === base);
 }
 check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], R[2], R[3], true) === base);
@@ -77,11 +77,71 @@ check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], 
 {
   const F = [1e6 - 120, -1e6 - 90, 1e6 + 120, -1e6 + 90];
   const a = snapshot(new BR.World(SEED), ...F);
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4 } });
   W.collect(0, 0, 100, 100, Infinity, { interiors: true });
   check('far from the origin (1e6 m) still deterministic', snapshot(W, ...F) === a);
 }
 check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base);
+
+// ---------------------------------------------------- architecture DNA
+
+{
+  const W = new BR.World(SEED);
+  const terrs = W.territoriesIn(-1600, -1600, 1600, 1600);
+  const groups = new Map();
+  for (const T of terrs) {
+    const a = W.final(T);
+    if (!T.district || !BR.AREAS[a] || BR.AREAS[a].role !== 'district') continue;
+    const k = a + ':' + T.district;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(T);
+  }
+  const same = [...groups.values()].find((g) => g.length >= 3);
+  let shared = false, stable = false;
+  if (same) {
+    const ds = same.slice(0, 3).map((T) => W.architecture(T));
+    shared = ds.every((d) => d.key === ds[0].key && JSON.stringify(d) === JSON.stringify(ds[0]));
+    const W2 = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 1 } });
+    stable = JSON.stringify(W2.architecture(W2.terr(same[0].key))) === JSON.stringify(ds[0]);
+  }
+  check('district architecture DNA persists across territories', !!same && shared);
+  check('architecture DNA survives cache eviction', !!same && stable);
+
+  const distinct = [];
+  for (const g of groups.values()) {
+    if (!g.length) continue;
+    const d = W.architecture(g[0]);
+    if (!distinct.some((x) => x.key === d.key)) distinct.push(d);
+    if (distinct.length >= 6) break;
+  }
+  const signatures = new Set(distinct.map((d) => [d.majorAxis, d.corridorWidth, d.module, d.spineSpacing, d.spinePhase, d.crossSpacing, d.crossPhase].join(':')));
+  check('different districts can have different architecture DNA', distinct.length >= 2 && signatures.size >= 2, `${distinct.length} districts, ${signatures.size} DNA signatures`);
+
+  // Offices and Hotel consume the DNA spatially. Their primary corridor blocks
+  // keep the district corridor width, and when a shared lattice line fits the
+  // territory it lands on the same world-coordinate phase as its neighbours.
+  let primary = 0, aligned = 0, badWidth = 0;
+  outer: for (const T of terrs) {
+    const a = W.final(T);
+    if (a !== 'offices' && a !== 'hotel') continue;
+    const D = W.architecture(T), I = W.interior(T);
+    for (const b of I.blocks) {
+      if (b.k !== BR.BLOCK_KIND.HALL) continue;
+      const w = b.x1 - b.x0, h = b.y1 - b.y0;
+      const isPrimary = D.majorAxis === 'x' ? w > h : h > w;
+      if (!isPrimary) continue;
+      primary++;
+      const width = D.majorAxis === 'x' ? h : w;
+      if (width !== D.corridorWidth) badWidth++;
+      const start = D.majorAxis === 'x' ? b.y0 : b.x0;
+      const mod = ((start - D.spinePhase) % D.spineSpacing + D.spineSpacing) % D.spineSpacing;
+      if (mod === 0 && width === D.corridorWidth) aligned++;
+      if (primary >= 400) break outer;
+    }
+  }
+  check('office/hotel corridors inherit DNA width', primary >= 100 && badWidth === 0, `${primary} corridors, ${badWidth} wrong width`);
+  check('office/hotel corridors use shared DNA lattice', primary >= 100 && aligned / primary > 0.3, `${aligned}/${primary} aligned`);
+}
 
 // ------------------------------------------------------------ tiling
 {
