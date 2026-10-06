@@ -97,6 +97,22 @@
         }
       return out;
     }
+    manifestationsIn(x0,y0,x1,y1) {
+      const C=BR.AREA_CFG.districtCell,out=[];
+      for(let a=Math.floor(x0/C)-1;a<=Math.floor(x1/C)+1;a++)for(let b=Math.floor(y0/C)-1;b<=Math.floor(y1/C)+1;b++){
+        const M=BR.manifestationSeed(this.seed,a,b);if(!M.exists)continue;
+        const B=M.bounds;if(B[2]<x0||B[0]>x1||B[3]<y0||B[1]>y1)continue;
+        out.push(M);
+      }
+      return out;
+    }
+    programsIn(x0,y0,x1,y1) {
+      const out=[];
+      for(const M of this.manifestationsIn(x0,y0,x1,y1)){
+        const P=this.programBy(M.type,M.id);if(P)out.push(P);
+      }
+      return out;
+    }
     color(T) {
       if (!T._rgb) T._rgb = BR.areaColor(this.seed, this.final(T), T.cx, T.cy, (T.h >>> 8) / 16777216);
       return T._rgb;
