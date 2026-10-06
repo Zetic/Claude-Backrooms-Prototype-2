@@ -4,8 +4,8 @@
  * Rules that keep the generator reproducible on any machine / engine:
  *   - All randomness comes from integer hashing (hash4) or a seeded PRNG (Rng).
  *     Never Math.random().
- *   - The world is one square grid. Territory and block geometry is integer
- *     metres; nothing is rotated, so no trigonometry takes part in generation.
+ *   - Territory ownership uses integer metres. Architectural patterns and
+ *     doorway clearances may use fractional metres; geometry stays axis-aligned.
  *   - Noise uses polynomial smoothing; only + - * / take part in decisions,
  *     which IEEE-754 defines exactly. A C# / GDScript port that keeps the same
  *     operation order produces the same map (Math.imul, >>>, |0 are 32-bit ops).

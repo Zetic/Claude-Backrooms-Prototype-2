@@ -150,15 +150,6 @@
       if (H.voids) { ctx.fillStyle = BG; ctx.fill(g.voids); ctx.strokeStyle = g.wall; ctx.lineWidth = px(1.5); ctx.stroke(g.voids); }
     }
 
-    // Physical circulation has one floor treatment across semantic and technical
-    // ownership changes. This is rendered floor, independent of debug overlays.
-    const routeFloor={primary:'#f2e8cf',secondary:'#eee2c5',local:'#e8dbba',service:'#d4cbb2'};
-    for(const T of items.territories){const I=built.get(T.key);if(!I)continue;
-      anchor(T.bbox[0],T.bbox[1]);
-      for(const b of I.blocks)if(b.flow){ctx.fillStyle=routeFloor[b.routeHierarchy];
-        ctx.fillRect(b.x0-T.bbox[0],b.y0-T.bbox[1],b.x1-b.x0,b.y1-b.y0);}
-    }
-
     // ---- interior detail by zoom
     if (detail && opts.walls !== false) {
       const wallW = px(clamp(0.3 * zoom, 0.8, 3)), minorW = wallW * 0.7, hatchW = Math.max(0.1, wallW * 0.4);
@@ -262,175 +253,64 @@
 
 
   // ---------------------------------------------------- generation debugger
-  function drawGenerationDebug(ctx, W, view, opts) {
-    const any = opts.manifestations || opts.programRegions || opts.dnaDebug || opts.candidateRoutes || opts.selectedRoutes || opts.structureNodes ||
-      opts.routeSpace || opts.buildableSpace || opts.obligations || opts.realizedRoutes || opts.continuations || opts.routeFailures ||
-      opts.spaceParcels || opts.spaceAccess || opts.localCirculation || opts.spaceViolations;
-    if (!any) return;
-    const { cx, cy, zoom, w, h, dpr } = view, hw=w/2/zoom, hh=h/2/zoom;
-    const X=(x)=>(x-cx)*zoom+w/2, Y=(y)=>(y-cy)*zoom+h/2;
-    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.lineCap='round'; ctx.lineJoin='round';
-    const seg=(axis,line,s0,s1)=>{
-      ctx.beginPath();
-      if(axis==='x'){ctx.moveTo(X(s0),Y(line));ctx.lineTo(X(s1),Y(line));}
-      else{ctx.moveTo(X(line),Y(s0));ctx.lineTo(X(line),Y(s1));}
-      ctx.stroke();
-    };
-    const rect=(q)=>{ctx.strokeRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);};
-    const ellipse=(L)=>{ctx.beginPath();ctx.ellipse(X(L.cx),Y(L.cy),L.rx*zoom,L.ry*zoom,0,0,Math.PI*2);ctx.stroke();};
-    const plans=W.structuresIn(cx-hw-80,cy-hh-80,cx+hw+80,cy+hh+80);
-    const manifests=(opts.manifestations||opts.programRegions)?W.manifestationsIn(cx-hw-80,cy-hh-80,cx+hw+80,cy+hh+80):[];
-
-    if(opts.manifestations){
-      ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,235,100,.92)';ctx.fillStyle='rgba(255,245,170,.96)';
-      ctx.font='11px ui-monospace, monospace';
-      for(const M of manifests){
-        ctx.setLineDash([]);
-        for(const L of M.lobes)ellipse(L);
-        ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(255,120,120,.9)';
-        for(const H of M.holes)ellipse(H);
-        ctx.setLineDash([]);ctx.strokeStyle='rgba(255,235,100,.92)';
-        if(zoom>=0.55)ctx.fillText(M.type+' · '+M.form+' · '+M.scale,X(M.cx)+5,Y(M.cy)-5);
-      }
-    }
-    if(opts.programRegions){
-      ctx.font='10px ui-monospace, monospace';
-      for(const M of manifests){
-        const P=W.programBy(M.type,M.id);if(!P)continue;
-        for(const R of P.regions){
-          const x=X(R.x),y=Y(R.y),rr=Math.max(3,Math.min(9,R.radius*zoom*.14));
-          ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);
-          ctx.fillStyle=R.role==='core'?'rgba(255,255,255,.95)':R.role==='void'?'rgba(255,95,95,.92)':'rgba(90,220,255,.9)';ctx.fill();
-          if(zoom>=.8){ctx.fillStyle='rgba(230,250,255,.95)';ctx.fillText(R.role,x+rr+3,y-rr);}
-        }
-      }
-    }
-
-    if(opts.dnaDebug){
-      ctx.setLineDash([7,5]);ctx.lineWidth=1.4;ctx.strokeStyle='rgba(210,120,255,.85)';
-      ctx.fillStyle='rgba(235,190,255,.95)';ctx.font='11px ui-monospace, monospace';
-      for(const P of plans){
-        rect(P.bounds);
-        if(zoom>=0.7)ctx.fillText(P.dnaKey,X(P.bounds[0])+4,Y(P.bounds[1])+13);
-      }
-      ctx.setLineDash([]);
-    }
-    if(opts.candidateRoutes){
-      ctx.setLineDash([4,5]);ctx.lineWidth=1;ctx.strokeStyle='rgba(235,235,235,.38)';
-      for(const P of plans)for(const D of P.demands){
-        ctx.beginPath();ctx.arc(X(D.x),Y(D.y),3,0,Math.PI*2);ctx.stroke();
-        if(zoom>=1.5){ctx.fillStyle='rgba(255,255,255,.85)';ctx.font='9px monospace';ctx.fillText(D.role+' '+Math.round(D.distance)+'m',X(D.x)+5,Y(D.y)-4);}
-      }
-      ctx.setLineDash([]);
-    }
-    if(opts.selectedRoutes){
-      const col={primary:'rgba(255,70,210,.95)',secondary:'rgba(70,220,255,.95)',local:'rgba(150,245,120,.95)',service:'rgba(255,170,55,.95)'};
-      const lw={primary:3.2,secondary:2.2,local:1.6,service:1.8};
-      for(const P of plans)for(const R of P.routes){
-        ctx.strokeStyle=col[R.hierarchy];ctx.lineWidth=lw[R.hierarchy];ctx.setLineDash(R.hierarchy==='service'?[5,3]:[]);
-        seg(R.axis,R.line,R.s0,R.s1);
-      }
-      ctx.setLineDash([]);
-    }
-    if(opts.routeSpace){
-      // Draw full canonical footprints without generating a single interior.
-      // No territory clipping or route movement occurs in this stage.
-      ctx.fillStyle='rgba(90,255,155,.32)';ctx.strokeStyle='rgba(90,255,155,.85)';ctx.lineWidth=1;
-      for(const P of plans)for(const R of P.routes){const q=R.rect;
-        ctx.fillRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);rect(q);
-      }
-    }
-    if(opts.structureNodes){
-      for(const P of plans){
-        for(const n of P.nodes){
-          ctx.beginPath();ctx.arc(X(n.x),Y(n.y),n.kind==='junction'?4:3,0,Math.PI*2);
-          ctx.fillStyle=n.kind==='junction'?'rgba(255,255,255,.95)':n.kind==='turn'?'rgba(110,220,255,.95)':'rgba(255,100,220,.95)';ctx.fill();
-        }
-        for(const a of P.anchors){
-          const x=X(a.x),y=Y(a.y);ctx.fillStyle='rgba(255,225,80,.95)';ctx.fillRect(x-5,y-5,10,10);
-          if(zoom>=1.1){ctx.fillStyle='rgba(255,245,180,.95)';ctx.font='11px ui-monospace, monospace';ctx.fillText(a.kind,x+7,y-7);}
-        }
-      }
-    }
-
-    const terrs=W.territoriesIn(cx-hw-20,cy-hh-20,cx+hw+20,cy+hh+20);
-    if(opts.buildableSpace){
-      ctx.fillStyle='rgba(100,180,255,.12)';ctx.strokeStyle='rgba(100,180,255,.8)';ctx.lineWidth=1;
-      for(const T of terrs){const I=W.interiors.get(T.key);if(!I)continue;
-        for(const q of I.buildableSpace||[]){ctx.fillRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);rect(q);}
-      }
-    }
-    if(opts.obligations){
-      ctx.setLineDash([3,2]);ctx.lineWidth=2.4;ctx.strokeStyle='rgba(255,235,70,.9)';
-      for(const T of terrs){const I=W.interiors.get(T.key);if(!I)continue;for(const o of I.obligations||[])seg(o.axis,o.line,o.s0,o.s1);}
-      ctx.setLineDash([]);
-    }
-    if(opts.realizedRoutes||opts.routeFailures){
-      for(const T of terrs){
-        const I=W.interiors.get(T.key);if(!I)continue;
-        for(const R of I.realizations||[]){
-          if(R.status==='failed'){
-            if(!opts.routeFailures)continue;
-            const x=R.axis==='x'?(R.s0+R.s1)/2:R.line,y=R.axis==='x'?R.line:(R.s0+R.s1)/2,X0=X(x),Y0=Y(y);
-            ctx.strokeStyle='rgba(255,65,65,.98)';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(X0-6,Y0-6);ctx.lineTo(X0+6,Y0+6);ctx.moveTo(X0+6,Y0-6);ctx.lineTo(X0-6,Y0+6);ctx.stroke();
-            if(zoom>=1.5){ctx.fillStyle='rgba(255,170,170,.98)';ctx.font='10px ui-monospace, monospace';ctx.fillText(R.reason||'failed',X0+8,Y0-7);}
-            continue;
-          }
-          if(!opts.realizedRoutes&&!opts.routeFailures)continue;
-          if(opts.realizedRoutes){
-            ctx.strokeStyle=R.status==='adapted'?'rgba(255,185,60,.98)':'rgba(80,255,130,.9)';
-            ctx.lineWidth=R.status==='adapted'?2.6:1.8;ctx.setLineDash(R.status==='adapted'?[5,2]:[]);
-            for(const q of R.rects)rect(q);
-          }
-          if(opts.routeFailures&&R.status==='adapted'){
-            const x=R.axis==='x'?(R.s0+R.s1)/2:R.line,y=R.axis==='x'?R.line:(R.s0+R.s1)/2;
-            ctx.fillStyle='rgba(255,190,70,.98)';ctx.beginPath();ctx.arc(X(x),Y(y),4,0,Math.PI*2);ctx.fill();
-          }
-        }
-      }
-      ctx.setLineDash([]);
-    }
-    if(opts.spaceParcels||opts.spaceAccess||opts.localCirculation||opts.spaceViolations){
-      for(const T of terrs){
-        const I=W.interiors.get(T.key);if(!I||!I.spacePlan)continue;
-        if(opts.localCirculation){
-          ctx.setLineDash([6,3]);ctx.lineWidth=2.5;ctx.strokeStyle='rgba(150,245,120,.95)';
-          for(const R of I.realizations||[])if(R.hierarchy==='local')for(const q of R.rects)rect(q);
+  function drawGenerationDebug(ctx,W,view,opts){
+    const keys=['manifestations','programRegions','dnaDebug','patterns','connections','entrances',
+      'roomEnvelopes','traversals','clearances','infillFailures'];
+    if(!keys.some(k=>opts[k]))return;
+    const {cx,cy,zoom,w,h,dpr}=view,hw=w/2/zoom,hh=h/2/zoom;
+    const X=x=>(x-cx)*zoom+w/2,Y=y=>(y-cy)*zoom+h/2;
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.lineCap='round';ctx.lineJoin='round';
+    const rect=q=>ctx.strokeRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);
+    const line=points=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke();};
+    if(opts.manifestations||opts.programRegions){
+      for(const M of W.manifestationsIn(cx-hw-40,cy-hh-40,cx+hw+40,cy+hh+40)){
+        if(opts.manifestations){
+          ctx.lineWidth=1.4;ctx.strokeStyle='rgba(255,235,100,.9)';
+          for(const L of M.lobes){ctx.beginPath();ctx.ellipse(X(L.cx),Y(L.cy),L.rx*zoom,L.ry*zoom,0,0,Math.PI*2);ctx.stroke();}
+          ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(255,120,120,.9)';
+          for(const L of M.holes){ctx.beginPath();ctx.ellipse(X(L.cx),Y(L.cy),L.rx*zoom,L.ry*zoom,0,0,Math.PI*2);ctx.stroke();}
           ctx.setLineDash([]);
         }
-        for(const p of I.spacePlan.parcels||[]){
-          const q=p.q,m=p.meta||{},cxp=(q[0]+q[2])/2,cyp=(q[1]+q[3])/2;
-          if(opts.spaceParcels){
-            ctx.lineWidth=1.2;ctx.setLineDash(m.role==='support'?[3,2]:[]);
-            ctx.strokeStyle=m.role==='support'?'rgba(255,190,90,.9)':'rgba(130,255,205,.82)';rect(q);ctx.setLineDash([]);
-          }
-          if(opts.spaceAccess&&m.frontSide){
-            let tx=cxp,ty=cyp;
-            if(m.frontSide==='x0')tx=q[0];else if(m.frontSide==='x1')tx=q[2];
-            else if(m.frontSide==='y0')ty=q[1];else if(m.frontSide==='y1')ty=q[3];
-            ctx.strokeStyle='rgba(90,210,255,.85)';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(X(cxp),Y(cyp));ctx.lineTo(X(tx),Y(ty));ctx.stroke();
-          }
-          if(opts.spaceViolations&&m.violations&&m.violations.length){
-            const x=X(cxp),y=Y(cyp);ctx.strokeStyle='rgba(255,65,65,.98)';ctx.lineWidth=2;
-            ctx.beginPath();ctx.moveTo(x-4,y-4);ctx.lineTo(x+4,y+4);ctx.moveTo(x+4,y-4);ctx.lineTo(x-4,y+4);ctx.stroke();
-            if(zoom>=1.4){ctx.fillStyle='rgba(255,175,175,.98)';ctx.font='10px ui-monospace, monospace';ctx.fillText(m.violations.join(','),x+6,y-5);}
-          }
+        if(opts.programRegions){const P=W.programBy(M.type,M.id);if(!P)continue;
+          ctx.font='10px monospace';ctx.fillStyle='rgba(90,220,255,.95)';
+          for(const r of P.regions){ctx.beginPath();ctx.arc(X(r.x),Y(r.y),4,0,Math.PI*2);ctx.fill();
+            if(zoom>=.8)ctx.fillText(r.role,X(r.x)+6,Y(r.y)-5);}
         }
       }
     }
-    if(opts.continuations){
-      const seen=new Set();ctx.lineWidth=5;ctx.strokeStyle='rgba(80,255,120,.98)';
-      for(const T of terrs)for(const n of W.adj(T)){
-        const k=BR.pairKey(T,n.U);if(seen.has(k))continue;seen.add(k);
-        const B=W.boundaries.get(k);if(!B)continue;
-        for(const c of B.continuations||[]){
-          ctx.beginPath();
-          if(c.o==='v'){ctx.moveTo(X(c.x),Y(c.s0));ctx.lineTo(X(c.x),Y(c.s1));}
-          else{ctx.moveTo(X(c.s0),Y(c.y));ctx.lineTo(X(c.s1),Y(c.y));}
-          ctx.stroke();
-        }
+    const terrs=W.territoriesIn(cx-hw-20,cy-hh-20,cx+hw+20,cy+hh+20),seen=new Set();
+    const colors={loop:'#c191ff',elbow:'#ffd585',cross:'#ff9bc7',wing:'#9ce7ff',enfilade:'#b0ee9a',open:'#fff2bb'};
+    for(const T of terrs){
+      const P=W.pattern(T),I=W.interiors.get(T.key);
+      if(opts.patterns){
+        ctx.strokeStyle=colors[P.family];ctx.lineWidth=1.2;ctx.setLineDash([3,3]);
+        for(const part of P.parts)rect(part.q);ctx.setLineDash([]);
+        if(zoom>=1){ctx.font='10px monospace';ctx.fillStyle=colors[P.family];
+          ctx.fillText(P.family,X(T.bbox[0])+4,Y(T.bbox[1])+12);}
       }
+      if(opts.dnaDebug){ctx.fillStyle='rgba(235,190,255,.95)';ctx.font='9px monospace';
+        if(zoom>=1)ctx.fillText(P.dnaKey,X(T.cx),Y(T.cy));}
+      if(opts.roomEnvelopes){ctx.lineWidth=1;ctx.strokeStyle='rgba(110,225,255,.8)';
+        for(const b of P.blocks){ctx.setLineDash(b.k===BR.BLOCK_KIND.HALL?[2,2]:[]);rect(b.q);}ctx.setLineDash([]);}
+      for(const p of P.ports){
+        if(seen.has(p.id))continue;seen.add(p.id);
+        if(opts.connections){
+          const N=W.terr(p.neighbor);ctx.lineWidth=p.required?1.8:1.1;
+          ctx.strokeStyle=p.required?'rgba(255,90,210,.9)':'rgba(90,210,255,.75)';ctx.setLineDash([5,4]);
+          line([[T.cx,T.cy],[p.x,p.y],[N.cx,N.cy]]);ctx.setLineDash([]);
+        }
+        if(opts.entrances){ctx.strokeStyle='rgba(80,255,155,.98)';ctx.lineWidth=4;
+          line(p.o==='v'?[[p.c,p.s0],[p.c,p.s1]]:[[p.s0,p.c],[p.s1,p.c]]);}
+      }
+      if(!I)continue;
+      if(opts.traversals){ctx.lineWidth=1.4;
+        for(const r of I.traversals){ctx.strokeStyle=r.kind==='corridor'?'rgba(255,155,70,.92)':'rgba(85,245,210,.92)';line(r.points);}}
+      if(opts.clearances){ctx.fillStyle='rgba(100,255,160,.15)';ctx.strokeStyle='rgba(100,255,160,.35)';ctx.lineWidth=.6;
+        for(const q of I.clearances){ctx.fillRect(X(q[0]),Y(q[1]),(q[2]-q[0])*zoom,(q[3]-q[1])*zoom);rect(q);}}
+      if(opts.infillFailures){ctx.strokeStyle='rgba(255,80,80,.95)';ctx.lineWidth=2;
+        for(const b of I.blocks)if(b.infillFallback)rect([b.x0,b.y0,b.x1,b.y1]);}
     }
+    ctx.setLineDash([]);
   }
 
   // ------------------------------------------------------------ far raster

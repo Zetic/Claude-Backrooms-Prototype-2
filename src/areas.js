@@ -26,16 +26,14 @@
   const S = { DIST: 0xd157, WARPX: 0x3a91, WARPY: 0x3a92, WARM: 0xc01a, BEIGE: 0xbe16, DNA: 0xd6a1 };
 
   // ----------------------------------------------------------------- areas
-  // split   - territory grain: tmin/tmax side, split probability, max aspect,
-  //           shortMax (cut long thin strips: hotel wings)
-  // style   - how a territory is cut into blocks (interior.js)
-  // zones   - zone-type weights for blocks (zones.js catalogue)
-  // main / service - zone weights for 'hall' style main halls / service strips
+  // split      - architectural-piece envelope dimensions and aspect bounds
+  // generation - reusable pattern weights, room dimensions and pocket infill
+  // zones      - procedural infill weights within planned room envelopes
   const AREAS = {
     backrooms: {
       name: 'Backrooms', role: 'base', color: null,
       split: { tmin: 14, tmax: 54, pSplit: 0.55, maxAspect: 3 },
-      style: 'irregular',
+      generation: { patterns:{open:5,enfilade:3,loop:1.4,elbow:1.2,cross:.7,wing:.5}, roomFront:[7,14] },
       zones: { open: 5, split: 1.2, office: 1.1, warren: 0.8, ring: 1.2, gallery: 0.8, stalls: 0.5, store: 0.4, courtyard: 0.4, stairs: 0.3, round: 0.15, corridorRooms: 0.3 },
       landmarks: { grandHall: 3, atrium: 2, theatre: 1, longGallery: 1.5 }, landmarkP: 0.03,
       architecture: { corridor3:0.32, module:[4,8], spine:[28,52], cross:[40,68], crossChance:[0.25,0.55] },
@@ -44,7 +42,7 @@
     offices: {
       name: 'Offices', role: 'district', color: '#d9c6c4',
       split: { tmin: 18, tmax: 48, pSplit: 0.6, maxAspect: 2.4 },
-      style: 'spine', chunk: [8, 22], depthMin: 6,
+      generation: { patterns:{wing:4,elbow:2,cross:2,loop:1,enfilade:2,open:1}, roomFront:[7,12] },
       zones: { office: 4, open: 1.6, stalls: 1.4, warren: 1, store: 0.6, corridorRooms: 0.4, split: 0.5 },
       landmarks: { atrium: 1 }, landmarkP: 0.02,
       architecture: { corridor3:0.32, module:[4,7], spine:[30,48], cross:[36,58], crossChance:[0.38,0.68] },
@@ -58,8 +56,9 @@
     },
     hotel: {
       name: 'Hotel', role: 'district', color: '#adb6c7',
-      split: { tmin: 16, tmax: 64, pSplit: 0.4, maxAspect: 4.5, shortMax: 28 },
-      style: 'hotel', chunk: [4, 8], depthMin: 4,
+      split: { tmin: 18, tmax: 52, pSplit: 0.35, maxAspect: 2.6 },
+      generation: { patterns:{wing:6,loop:2,elbow:1.5,cross:1.2,enfilade:.8,open:.5},
+        roomFront:[4.5,9],roomDepth:[4.5,14],maxRoomAspect:2.6 },
       zones: { guest: 5.5, open: 1.5, gallery: 0.8, courtyard: 0.45 },
       landmarks: { atrium: 1 }, landmarkP: 0.03,
       architecture: { corridor3:0.22, module:[4,6], spine:[26,38], cross:[42,64], crossChance:[0.28,0.52] },
@@ -74,7 +73,7 @@
     poolrooms: {
       name: 'Poolrooms', role: 'district', color: '#e3ebeb',
       split: { tmin: 22, tmax: 70, pSplit: 0.35, maxAspect: 2.5 },
-      style: 'hall',
+      generation: { patterns:{open:6,enfilade:3,loop:2,elbow:1,cross:.5,wing:.4}, roomFront:[9,16] },
       zones: { pools:4, pool:1.2, courtyard:0.7, open:0.9, stalls:0.45, room:0.3, stairs:0.2 },
       main: { pools: 4, pool: 1, courtyard: 0.4, open: 0.6 },
       service: { stalls: 2, room: 1.2, stairs: 0.3 },
@@ -91,7 +90,7 @@
     parking: {
       name: 'Parking', role: 'district', color: '#bebdb7',
       split: { tmin: 26, tmax: 84, pSplit: 0.3, maxAspect: 2.5 },
-      style: 'hall',
+      generation: { patterns:{open:9,enfilade:2,loop:.5,elbow:.5,cross:.3,wing:.2}, roomFront:[12,20] },
       zones: { parking:4, store:1, open:0.8, room:0.45, stairs:0.28 },
       main: { parking: 4, store: 1, open: 0.7 },
       service: { room: 1.5, stairs: 0.8 },
@@ -107,14 +106,16 @@
     home: {
       name: 'Home', role: 'pocket', color: '#cfa985',
       pocket: { hosts: ['backrooms', 'offices', 'hotel'], p: 0.045, minDim: 14, maxDim: 42, salt: 61 },
-      style: 'house',
+      generation: { patterns:{enfilade:4,elbow:2,wing:2,loop:1,open:1},
+        zones:{house:5,room:1,office:.5},roomFront:[5,8] },
       architecture: { corridor3:0.05, module:[4,7], spine:[30,48], cross:[42,68], crossChance:[0.2,0.45] },
       roomScale: [0.9, 1.1], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.1]
     },
     maintenance: {
       name: 'Maintenance', role: 'pocket', color: '#b5b2a8',
       pocket: { hosts: ['backrooms', 'parking', 'poolrooms'], p: 0.025, minDim: 12, maxDim: 40, salt: 62 },
-      style: 'utility',
+      generation: { patterns:{enfilade:4,elbow:3,cross:1,wing:2,open:1},
+        zones:{machinery:5,store:1,room:1},roomFront:[5,8] },
       architecture: { corridor3:0.15, module:[4,7], spine:[28,46], cross:[40,64], crossChance:[0.2,0.4] },
       roomScale: [0.7, 0.9], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.05]
     }
@@ -170,8 +171,8 @@
   // Territories are generation ownership units, not architectural identity
   // units. A district (or a coarse base-area region) therefore owns a stable
   // DNA record that nearby territories inherit. Local territory RNG still
-  // varies individual rooms, while the DNA preserves corridor rhythm,
-  // preferred axis, module size, density and zone tendencies across seams.
+  // varies individual rooms, while DNA preserves preferred pattern families,
+  // orientation, corridor width, module size and infill tendencies across seams.
   const DNA_REGION = 760;
 
   function architectureRegion(T, area) {
@@ -209,8 +210,9 @@
     const zoneWeights = {};
     for (const k in (A.zones || {})) zoneWeights[k] = A.zones[k] * rng.range(0.78, 1.22);
 
+    const patternFamily = rng.weighted((A.generation || {}).patterns || {open:1});
     const dna = {
-      key: reg.key, area, majorAxis, corridorWidth, module,
+      key: reg.key, area, majorAxis, corridorWidth, module, patternFamily,
       spineSpacing, spinePhase: rng.int(0, spineSpacing - 1),
       crossSpacing, crossPhase: rng.int(0, crossSpacing - 1),
       crossChance: rng.range(AC.crossChance[0], AC.crossChance[1]),

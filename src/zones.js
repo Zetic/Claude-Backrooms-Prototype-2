@@ -732,10 +732,9 @@
    * bathroom (Z.noDoor).
    */
   GEN.guest = (Z, q, rng, st, o) => {
-    // Guest is an archetype, not a permission to stretch arbitrary leftover
-    // floor. The local space planner normally enforces this before selection;
-    // retain a defensive fallback for callers that explicitly force the type.
-    if (o && o.space && BR.spaceTypeCompatible && !BR.spaceTypeCompatible('hotel', 'guest', o.space,
+    // The owning generation profile supplies room-envelope constraints. This
+    // archetype is reusable in any semantic area with suitable geometry/access.
+    if (o && o.space && BR.spaceTypeCompatible && !BR.spaceTypeCompatible(o.space.area, 'guest', o.space,
       Math.max(q[2]-q[0], q[3]-q[1]), Math.min(q[2]-q[0], q[3]-q[1]))) return GEN.open(Z, q, rng, st, o);
     const [x0, y0, x1, y1] = q, f = o.front || 'y0', hz = f[0] === 'y';
     const Wd = hz ? x1 - x0 : y1 - y0, D = hz ? y1 - y0 : x1 - x0, mir = rng.f() < 0.5;
@@ -853,7 +852,7 @@
     pool: (U, V) => U >= 12 && V >= 9,
     house: (U, V) => U >= 6 && V >= 5,
     yard: () => true,
-    guest: (U, V, meta) => meta ? BR.spaceTypeCompatible('hotel', 'guest', meta, U, V) :
+    guest: (U, V, meta) => meta ? BR.spaceTypeCompatible(meta.area, 'guest', meta, U, V) :
       U <= 12 && V >= 4.5 && V <= 9.5,
     pools: (U, V) => U >= 10 && V >= 8,
     parking: (U, V) => U >= 16 && V >= 12,

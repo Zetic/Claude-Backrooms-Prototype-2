@@ -1,0 +1,86 @@
+{
+  "seed": 31337,
+  "coordinates": {
+    "hotel": {
+      "cx": 678.3766666622831,
+      "cy": 443.27501942822704,
+      "zoom": 3
+    },
+    "closeup": {
+      "cx": 678,
+      "cy": 443,
+      "zoom": 9
+    },
+    "traversal": {
+      "cx": 678,
+      "cy": 443,
+      "zoom": 7
+    },
+    "network": {
+      "cx": 678,
+      "cy": 443,
+      "zoom": 3
+    },
+    "parking": {
+      "cx": 480.3970380579121,
+      "cy": -68.07979902625087,
+      "zoom": 4
+    },
+    "substrate": {
+      "cx": 0,
+      "cy": 0,
+      "zoom": 5
+    }
+  },
+  "samples": [
+    {
+      "family": "loop",
+      "key": "1,0:1",
+      "area": "backrooms",
+      "cx": 177,
+      "cy": 25,
+      "zoom": 12.903225806451612
+    },
+    {
+      "family": "elbow",
+      "key": "0,1:4",
+      "area": "parking",
+      "cx": 65,
+      "cy": 177.5,
+      "zoom": 7.4603174603174605
+    },
+    {
+      "family": "cross",
+      "key": "1,1:6",
+      "area": "backrooms",
+      "cx": 239,
+      "cy": 196,
+      "zoom": 7.017543859649122
+    },
+    {
+      "family": "wing",
+      "key": "1,0:14",
+      "area": "backrooms",
+      "cx": 239.5,
+      "cy": 53,
+      "zoom": 11.428571428571429
+    },
+    {
+      "family": "enfilade",
+      "key": "0,1:7",
+      "area": "backrooms",
+      "cx": 115.5,
+      "cy": 150,
+      "zoom": 9.30232558139535
+    },
+    {
+      "family": "open",
+      "key": "0,1:15",
+      "area": "backrooms",
+      "cx": 151,
+      "cy": 150.5,
+      "zoom": 9.090909090909092
+    }
+  ],
+  "debugToggleInvariant": true
+}

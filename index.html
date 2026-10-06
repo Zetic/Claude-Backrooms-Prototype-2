@@ -71,36 +71,27 @@
     <option value="manifestations">1 · Area manifestations</option>
     <option value="program">2 · Structural program</option>
     <option value="dna">3 · DNA regions</option>
-    <option value="candidates">4 · Access demand</option>
-    <option value="selected">5 · World route network</option>
-    <option value="routeSpace">6 · Physical route space</option>
-    <option value="obligations">7 · Territory intersection</option>
-    <option value="realized">8 · Reserved intersections</option>
-    <option value="buildable">9 · Remaining buildable space</option>
-    <option value="space">10 · Interior parcels</option>
-    <option value="boundaries">11 · Route interfaces</option>
+    <option value="patterns">4 · Architectural patterns</option>
+    <option value="connections">5 · Global connectivity (abstract)</option>
+    <option value="envelopes">6 · Rooms and corridors</option>
+    <option value="traversals">7 · Actual traversal paths</option>
+    <option value="entrances">8 · Shared entrances</option>
     <option value="full">Full generation debug</option>
   </select>
   <div class="sec">Generation debug</div>
   <div class="grid2">
     <label class="tg"><input type="checkbox" id="o-manifestations"> Manifestations</label>
     <label class="tg"><input type="checkbox" id="o-programRegions"> Program regions</label>
-    <label class="tg"><input type="checkbox" id="o-dnaDebug"> DNA regions</label>
-    <label class="tg"><input type="checkbox" id="o-candidateRoutes"> Access demands</label>
-    <label class="tg"><input type="checkbox" id="o-selectedRoutes"> World network</label>
-    <label class="tg"><input type="checkbox" id="o-structureNodes"> Nodes / anchors</label>
-    <label class="tg"><input type="checkbox" id="o-routeSpace"> Route footprints</label>
-    <label class="tg"><input type="checkbox" id="o-buildableSpace"> Buildable space</label>
-    <label class="tg"><input type="checkbox" id="o-obligations"> Territory clips</label>
-    <label class="tg"><input type="checkbox" id="o-realizedRoutes"> Reserved clips</label>
-    <label class="tg"><input type="checkbox" id="o-continuations"> Continuations</label>
-    <label class="tg"><input type="checkbox" id="o-routeFailures"> Route failures</label>
-    <label class="tg"><input type="checkbox" id="o-spaceParcels"> Space parcels</label>
-    <label class="tg"><input type="checkbox" id="o-spaceAccess"> Access ownership</label>
-    <label class="tg"><input type="checkbox" id="o-localCirculation"> World local access</label>
-    <label class="tg"><input type="checkbox" id="o-spaceViolations"> Space violations</label>
+    <label class="tg"><input type="checkbox" id="o-dnaDebug"> Shared DNA</label>
+    <label class="tg"><input type="checkbox" id="o-patterns"> Architectural patterns</label>
+    <label class="tg"><input type="checkbox" id="o-connections"> Abstract connections</label>
+    <label class="tg"><input type="checkbox" id="o-roomEnvelopes"> Room envelopes</label>
+    <label class="tg"><input type="checkbox" id="o-traversals"> Actual traversal paths</label>
+    <label class="tg"><input type="checkbox" id="o-entrances"> Shared entrances</label>
+    <label class="tg"><input type="checkbox" id="o-clearances"> Traversal clearance</label>
+    <label class="tg"><input type="checkbox" id="o-infillFailures"> Infill fallbacks</label>
   </div>
-  <div style="font-size:11px;line-height:1.5;margin-top:8px">Network: pink primary · cyan secondary · green local · orange service<br>Routes reserve space before rooms. Dashed parcel outlines indicate support space.</div>
+  <div style="font-size:11px;line-height:1.5;margin-top:8px">Debug only: pink required connections · cyan optional connections<br>Orange paths use corridors; green paths traverse rooms. Routes have no separate floor treatment.</div>
   <div id="info">Hover the map to inspect it.</div>
   <div id="stats"></div>
 </div>
@@ -113,6 +104,7 @@
 <script src="src/structure.js"></script>
 <script src="src/spaceplan.js"></script>
 <script src="src/zones.js"></script>
+<script src="src/traversal.js"></script>
 <script src="src/interior.js"></script>
 <script src="src/boundary.js"></script>
 <script src="src/world.js"></script>
@@ -124,7 +116,7 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const $ = (id) => document.getElementById(id);
-  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms', 'manifestations', 'programRegions', 'dnaDebug', 'candidateRoutes', 'routeSpace', 'buildableSpace', 'selectedRoutes', 'structureNodes', 'obligations', 'realizedRoutes', 'continuations', 'routeFailures', 'spaceParcels', 'spaceAccess', 'localCirculation', 'spaceViolations'];
+  const OPTS = ['walls','areaMap','territories','cells','rooms','manifestations','programRegions','dnaDebug','patterns','connections','roomEnvelopes','traversals','entrances','clearances','infillFailures'];
 
   // ---------- state (mirrored into the URL hash so views are shareable)
   const Q = new URLSearchParams(location.hash.slice(1));
@@ -191,7 +183,7 @@
     $('stats').textContent =
       'x ' + state.x.toFixed(0).padStart(7) + '   y ' + state.y.toFixed(0).padStart(7) + '   zoom ' + state.zoom.toFixed(2) + '\n' +
       'view: ' + lastItems.mode + ' · ' + lastItems.tiles + ' tiles' + (pending ? '  (generating…)' : '') + '\n' +
-      'built: ' + world.plans.size + ' plans · ' + s.structuresBuilt + ' structures · ' + s.interiorsBuilt + ' interiors (' + (s.interiorMs / Math.max(1, s.interiorsBuilt)).toFixed(2) + ' ms avg)\n' +
+      'built: ' + world.plans.size + ' plans · ' + s.structuresBuilt + ' compositions · ' + s.patternsBuilt + ' patterns · ' + s.interiorsBuilt + ' interiors (' + (s.interiorMs / Math.max(1, s.interiorsBuilt)).toFixed(2) + ' ms avg)\n' +
       'frame: ' + frameMs.toFixed(1) + ' ms';
   }
 
@@ -209,29 +201,16 @@
       ' &middot; ' + r.manifestation.lobes.length + ' lobes' + (r.manifestation.holes.length ? ' &middot; ' + r.manifestation.holes.length + ' substrate cuts' : '');
     if (r.programRole) html += '<br>program role ' + r.programRole;
     if (r.dna) html += '<br>DNA ' + r.dna.key + ' &middot; ' + r.dna.majorAxis.toUpperCase() + '-axis &middot; ' + r.dna.corridorWidth + 'm corridor &middot; ' + r.dna.module + 'm module';
-    if(r.routes&&r.routes.length)html+='<br>world routes '+[...new Set(r.routes.map((x)=>x.id))].join('<br>');
-    if(r.routeNetworks&&r.routeNetworks.length)html+='<br>'+r.routeNetworks.length+' network intersections';
-    if (r.structure) html += '<br>structure ' + r.structure.key + ' &middot; ' + r.structure.routes.length + ' routes &middot; ' + r.structure.anchors.length + ' anchors';
-    if (r.block) {
-      html += '<br>zone ' + r.block.zone + (r.block.sub.length > 1 ? ' (' + r.block.sub.join(' › ') + ')' : '') + (r.room ? ' &middot; ' + r.room.kind : '');
-      if (r.block.flow) html += '<br>flow ' + r.block.flow.kind + ' &middot; ' + r.block.flow.axis.toUpperCase() + ' &middot; ' + r.block.flow.status;
-      if (r.block.routeHierarchy === 'local') html += '<br>local circulation';
-      if (r.block.space) {
-        html += '<br>space ' + r.block.space.role + ' &middot; access ' + r.block.space.access +
-          ' &middot; frontage ' + r.block.space.frontage.toFixed(1) + 'm &middot; depth ' + r.block.space.depth.toFixed(1) + 'm';
-        if (r.block.space.violations.length) html += '<br>violations ' + r.block.space.violations.join(', ');
-      }
-      if (r.block.anchorKind) html += '<br>anchor ' + r.block.anchorKind;
+    if(r.pattern)html+='<br>pattern '+r.pattern.family+' &middot; '+r.pattern.blocks.length+' spaces &middot; '+r.pattern.ports.length+' entrances';
+    if(r.block){
+      html+='<br>space '+r.block.programRole+' &middot; zone '+r.block.zone+
+        (r.block.sub.length>1?' ('+r.block.sub.join(' › ')+')':'')+(r.room?' &middot; '+r.room.kind:'');
+      if(r.block.space)html+='<br>'+r.block.space.entrances+' access points &middot; '+
+        r.block.space.frontage.toFixed(1)+'m frontage &middot; '+r.block.space.depth.toFixed(1)+'m depth';
+      if(r.block.infillFallback)html+='<br>bounded infill fallback';
     }
-    if (r.realizations && r.realizations.length) {
-      const ex = r.realizations.filter((x) => x.status === 'exact').length;
-      const fa = r.realizations.filter((x) => x.status === 'failed').length;
-      html += '<br>routes exact ' + ex + ' &middot; failed ' + fa;
-    }
-    if (r.spacePlan) {
-      const d = r.spacePlan.diagnostics;
-      html += '<br>local plan ' + d.parcels + ' parcels &middot; ' + d.localRoutes + ' territory halls &middot; ' + d.support + ' support';
-    }
+    if(r.diagnostics)html+='<br>'+r.diagnostics.throughRooms+' room spaces &middot; '+r.diagnostics.corridors+
+      ' corridor spaces &middot; '+r.diagnostics.fallbacks+' infill fallbacks';
     $('info').innerHTML = html;
     if (hoverKey !== T.key) { hoverKey = T.key; dirty = true; }
   }
@@ -316,29 +295,17 @@
   })(lastT);
 
   // ---------- generation-stage presets
-  const DEBUG_KEYS = ['manifestations','programRegions','dnaDebug','candidateRoutes','routeSpace','buildableSpace','selectedRoutes','structureNodes','obligations','realizedRoutes','continuations','routeFailures','spaceParcels','spaceAccess','localCirculation','spaceViolations'];
+  const DEBUG_KEYS = ['manifestations','programRegions','dnaDebug','patterns','connections','roomEnvelopes','traversals','entrances','clearances','infillFailures'];
   const STAGES = {
-    final: [],
-    manifestations: ['manifestations'],
-    program: ['manifestations','programRegions'],
-    dna: ['manifestations','programRegions','dnaDebug'],
-    candidates: ['dnaDebug','candidateRoutes'],
-    selected: ['selectedRoutes','structureNodes'],
-    routeSpace: ['routeSpace','selectedRoutes'],
-    buildable: ['routeSpace','buildableSpace'],
-    obligations: ['selectedRoutes','structureNodes','obligations'],
-    realized: ['selectedRoutes','structureNodes','obligations','realizedRoutes','routeFailures'],
-    space: ['selectedRoutes','realizedRoutes','spaceParcels','spaceAccess','localCirculation','spaceViolations'],
-    boundaries: ['realizedRoutes','localCirculation','continuations','routeFailures'],
-    full: DEBUG_KEYS.slice()
+    final: [], manifestations:['manifestations'], program:['manifestations','programRegions'],
+    dna:['dnaDebug','patterns'], patterns:['patterns'], connections:['patterns','connections','entrances'],
+    envelopes:['patterns','roomEnvelopes'], traversals:['traversals','entrances'],
+    entrances:['entrances'], full:DEBUG_KEYS
   };
   function applyStage(name) {
-    const on = new Set(STAGES[name] || []);
-    for (const k of DEBUG_KEYS) {
-      state.opts[k] = on.has(k);
-      const el = $('o-' + k); if (el) el.checked = state.opts[k];
-    }
-    if(['obligations','realized','buildable','space','boundaries','full'].includes(name)){
+    const on=new Set(STAGES[name]||[]);
+    for(const k of DEBUG_KEYS){state.opts[k]=on.has(k);$('o-'+k).checked=state.opts[k];}
+    if(['envelopes','traversals','entrances','full'].includes(name)){
       state.opts.areaMap=false;$('o-areaMap').checked=false;state.zoom=Math.max(1.2,state.zoom);
     }
     changed();
