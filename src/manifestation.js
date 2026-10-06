@@ -15,6 +15,7 @@
   const { Rng, hash4, fbm, contrast } = BR;
 
   const S = { MANIFEST:0x6d41, PROGRAM:0x6d42, WARPX:0x6d43, WARPY:0x6d44 };
+  const SEARCH_CELLS = 2;
   const SCALE = {
     small:    [58, 92],
     medium:   [88, 138],
@@ -148,8 +149,8 @@
     const wy=y+cfg.warp*2*(contrast(fbm(seed^S.WARPY,x/ws,y/ws,2),2)-.5);
     const da=Math.floor(wx/C),db=Math.floor(wy/C);
     let best=1,hit=null;
-    for(let a=da-1;a<=da+1;a++)for(let b=db-1;b<=db+1;b++){
-      const M=manifestationSeed(seed,a,b);if(!M.exists)continue;
+    for(let a=da-SEARCH_CELLS;a<=da+SEARCH_CELLS;a++)for(let b=db-SEARCH_CELLS;b<=db+SEARCH_CELLS;b++){
+      const M=W.manifestSeed?W.manifestSeed(a,b):manifestationSeed(seed,a,b);if(!M.exists)continue;
       const d=manifestationDistance(M,wx,wy);
       if(d<best){best=d;hit=M;}
     }
@@ -221,7 +222,7 @@
   }
 
   Object.assign(BR,{
-    MANIFESTATION_FORMS:Object.keys(DEFAULT_FORMS), MANIFESTATION_SCALES:SCALE,
+    MANIFESTATION_FORMS:Object.keys(DEFAULT_FORMS), MANIFESTATION_SCALES:SCALE, MANIFEST_SEARCH_CELLS:SEARCH_CELLS,
     PROGRAM_ROLES:Object.keys(DEFAULT_ROLES), manifestationSeed, manifestationDistance,
     manifestationAt, buildManifestationProgram, programRoleAt, programZoneWeights,
     programPreferredZone
