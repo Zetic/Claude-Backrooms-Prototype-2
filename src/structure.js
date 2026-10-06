@@ -1,0 +1,152 @@
+/*
+ * structure.js - district-scale structure between architecture DNA and local
+ * territory interiors. Major architecture is selected in world space first;
+ * territories only realize the portion that crosses their owned rectangles.
+ */
+(function (root) {
+  'use strict';
+  const BR = root.BR;
+  const { Rng, hash4 } = BR;
+  const S = { PLAN: 0x5a71 };
+  const PLANNED = new Set(['offices', 'hotel']);
+  const PRI = { major: 0, secondary: 1, service: 2 };
+
+  function lineCandidates(dna, d) {
+    const bx = [d.cx - d.rx * 0.9, d.cx + d.rx * 0.9], by = [d.cy - d.ry * 0.9, d.cy + d.ry * 0.9], out = [];
+    const add = (axis, spacing, phase, lo, hi, s0, s1, kind) => {
+      for (let k = Math.ceil((lo - phase) / spacing); k <= Math.floor((hi - phase) / spacing); k++)
+        out.push({ id: dna.key + '|candidate|' + kind + '|' + axis + '|' + (phase + k * spacing),
+          kind, axis, line: phase + k * spacing, s0, s1 });
+    };
+    if (dna.majorAxis === 'x') {
+      add('x', dna.spineSpacing, dna.spinePhase, by[0], by[1], bx[0], bx[1], 'spine');
+      add('y', dna.crossSpacing, dna.crossPhase, bx[0], bx[1], by[0], by[1], 'cross');
+    } else {
+      add('y', dna.spineSpacing, dna.spinePhase, bx[0], bx[1], by[0], by[1], 'spine');
+      add('x', dna.crossSpacing, dna.crossPhase, by[0], by[1], bx[0], bx[1], 'cross');
+    }
+    return { bounds: [bx[0], by[0], bx[1], by[1]], lines: out };
+  }
+  const nearest = (a, v) => a.slice().sort((x, y) => Math.abs(x.line - v) - Math.abs(y.line - v) || x.line - y.line);
+  const route = (key, n, hierarchy, axis, line, s0, s1, width, role) => ({
+    id: key + '|route|' + n, hierarchy, axis, line, s0: Math.min(s0, s1), s1: Math.max(s0, s1), width, role
+  });
+  const point = (R, start) => R.axis === 'x' ? [start ? R.s0 : R.s1, R.line] : [R.line, start ? R.s0 : R.s1];
+  function intersection(A, B) {
+    if (A.axis === B.axis) return null;
+    const H = A.axis === 'x' ? A : B, V = A.axis === 'y' ? A : B;
+    return V.line >= H.s0 && V.line <= H.s1 && H.line >= V.s0 && H.line <= V.s1 ? [V.line, H.line] : null;
+  }
+
+  function buildDistrictStructure(W, area, district) {
+    if (!PLANNED.has(area) || !district) return null;
+    const ij = district.split(','), a = +ij[0], b = +ij[1], d = BR.districtSeed(W.seed, a, b);
+    if (!d.exists || d.type !== area) return null;
+    const dna = BR.architectureDNA(W, { district, cx: d.cx, cy: d.cy, base: area }, area);
+    const C = lineCandidates(dna, d), rng = new Rng(hash4(W.seed, a, b, S.PLAN ^ (area === 'hotel' ? 0x911 : 0x622)));
+    const majors = nearest(C.lines.filter((x) => x.kind === 'spine'), dna.majorAxis === 'x' ? d.cy : d.cx);
+    const crosses = nearest(C.lines.filter((x) => x.kind === 'cross'), dna.majorAxis === 'x' ? d.cx : d.cy);
+    const key = 'structure:' + area + ':' + district, routes = [];
+    const along0 = dna.majorAxis === 'x' ? C.bounds[0] : C.bounds[1], along1 = dna.majorAxis === 'x' ? C.bounds[2] : C.bounds[3];
+    const perp0 = dna.majorAxis === 'x' ? C.bounds[1] : C.bounds[0], perp1 = dna.majorAxis === 'x' ? C.bounds[3] : C.bounds[2];
+    const centerAlong = dna.majorAxis === 'x' ? d.cx : d.cy, centerPerp = dna.majorAxis === 'x' ? d.cy : d.cx;
+    let rn = 0;
+    const trunkLine = majors.length ? majors[0].line : centerPerp;
+    const trunk = route(key, rn++, 'major', dna.majorAxis, trunkLine,
+      centerAlong - (centerAlong - along0) * 0.92, centerAlong + (along1 - centerAlong) * 0.92,
+      dna.corridorWidth, 'trunk');
+    routes.push(trunk);
+
+    let wing = null;
+    const sideMajors = majors.filter((m) => m.line !== trunkLine);
+    if (perp1 - perp0 > dna.spineSpacing * 2.6 && sideMajors.length) {
+      const m = nearest(sideMajors, centerPerp + (rng.f() < 0.5 ? -dna.spineSpacing : dna.spineSpacing))[0];
+      const inset = (along1 - along0) * rng.range(0.10, 0.20);
+      wing = route(key, rn++, 'major', dna.majorAxis, m.line, along0 + inset, along1 - inset, dna.corridorWidth, 'wing');
+      routes.push(wing);
+    }
+
+    const usable = crosses.filter((c) => c.line > along0 + 12 && c.line < along1 - 12);
+    const want = Math.min(4, Math.max(2, Math.round((along1 - along0) / Math.max(85, dna.crossSpacing * 1.8))));
+    const selected = [];
+    for (const c of nearest(usable, centerAlong)) {
+      if (selected.length >= want) break;
+      if (selected.some((q) => Math.abs(q.line - c.line) < Math.max(20, dna.crossSpacing * 0.7))) continue;
+      selected.push(c);
+    }
+    if (!selected.length && crosses.length) selected.push(crosses[0]);
+    for (let i = 0; i < selected.length; i++) {
+      const c = selected[i], axis = dna.majorAxis === 'x' ? 'y' : 'x';
+      let a0, a1, role;
+      if (i === 0 && wing) { a0 = trunkLine; a1 = wing.line; role = 'bridge'; }
+      else {
+        const side = ((hash4(W.seed, a, b, 0x7300 + i) & 1) ? 1 : -1);
+        a0 = trunkLine; a1 = side < 0 ? perp0 + rng.range(8, 20) : perp1 - rng.range(8, 20); role = 'branch';
+      }
+      routes.push(route(key, rn++, 'secondary', axis, c.line, a0, a1, dna.corridorWidth, role));
+    }
+
+    if (selected.length && (perp1 - perp0) > 45) {
+      const side = (hash4(W.seed, a, b, 0x51ce) & 1) ? 1 : -1;
+      let serviceLine = trunkLine + side * (dna.corridorWidth + dna.module * rng.int(2, 3));
+      serviceLine = Math.max(perp0 + 4, Math.min(perp1 - 4, serviceLine));
+      const c = selected[0].line, halfSpan = (along1 - along0) * rng.range(0.16, 0.24);
+      routes.push(route(key, rn++, 'service', dna.majorAxis, serviceLine,
+        Math.max(along0 + 6, c - halfSpan), Math.min(along1 - 6, c + halfSpan), Math.max(2, dna.corridorWidth), 'service'));
+      routes.push(route(key, rn++, 'service', dna.majorAxis === 'x' ? 'y' : 'x', c,
+        trunkLine, serviceLine, Math.max(2, dna.corridorWidth), 'service-spur'));
+    }
+
+    const nodes = [];
+    for (let i = 0; i < routes.length; i++) for (let j = i + 1; j < routes.length; j++) {
+      const p = intersection(routes[i], routes[j]);
+      if (p && !nodes.some((n) => Math.abs(n.x - p[0]) < 0.01 && Math.abs(n.y - p[1]) < 0.01))
+        nodes.push({ x: p[0], y: p[1], kind: 'junction', routes: [routes[i].id, routes[j].id] });
+    }
+    for (const R of routes) for (const start of [true, false]) {
+      const p = point(R, start);
+      if (!nodes.some((n) => Math.hypot(n.x - p[0], n.y - p[1]) < 0.01))
+        nodes.push({ x: p[0], y: p[1], kind: 'terminus', routes: [R.id] });
+    }
+
+    const anchors = [], junctions = nodes.filter((n) => n.kind === 'junction');
+    const central = junctions.slice().sort((u, v) =>
+      (u.x-d.cx)**2 + (u.y-d.cy)**2 - ((v.x-d.cx)**2 + (v.y-d.cy)**2))[0];
+    if (central) anchors.push({ id:key+'|anchor|0', x:central.x, y:central.y,
+      kind:area==='hotel'?'lobby':'atrium', zone:area==='hotel'?'open':'courtyard' });
+    const terms = nodes.filter((n) => n.kind === 'terminus').sort((u,v) =>
+      ((v.x-d.cx)**2+(v.y-d.cy)**2)-((u.x-d.cx)**2+(u.y-d.cy)**2));
+    if (terms[0]) anchors.push({ id:key+'|anchor|1', x:terms[0].x, y:terms[0].y,
+      kind:area==='hotel'?'ballroom':'open-workspace', zone:area==='hotel'?'gallery':'open' });
+    if (area==='hotel' && terms[1] && rng.f()<0.6) anchors.push({ id:key+'|anchor|2', x:terms[1].x, y:terms[1].y,
+      kind:'courtyard', zone:'courtyard' });
+
+    return { key, area, district, dnaKey:dna.key, dna, districtSeed:d, bounds:C.bounds, candidates:C.lines, routes, nodes, anchors };
+  }
+
+  function routePiece(R, q, ri) {
+    const h=R.width/2;
+    if (R.axis==='x') {
+      if (R.line < q[1]-h || R.line > q[3]+h) return null;
+      const s0=Math.max(R.s0,q[0]), s1=Math.min(R.s1,q[2]); if(s1-s0<0.75)return null;
+      return {routeId:R.id,hierarchy:R.hierarchy,role:R.role,axis:'x',line:R.line,width:R.width,s0,s1,
+        globalS0:R.s0,globalS1:R.s1,rectIndex:ri,enters:R.s0<s0+1e-9,exits:R.s1>s1-1e-9};
+    }
+    if (R.line < q[0]-h || R.line > q[2]+h) return null;
+    const s0=Math.max(R.s0,q[1]), s1=Math.min(R.s1,q[3]); if(s1-s0<0.75)return null;
+    return {routeId:R.id,hierarchy:R.hierarchy,role:R.role,axis:'y',line:R.line,width:R.width,s0,s1,
+      globalS0:R.s0,globalS1:R.s1,rectIndex:ri,enters:R.s0<s0+1e-9,exits:R.s1>s1-1e-9};
+  }
+
+  function territoryStructure(W,T,rects){
+    const area=W.final(T);
+    if(!PLANNED.has(area)||!T.district)return {plan:null,routes:[],anchors:[]};
+    const P=W.structureBy(area,T.district); if(!P)return {plan:null,routes:[],anchors:[]};
+    rects=rects||T.rects; const routes=[];
+    for(const R of P.routes)for(let ri=0;ri<rects.length;ri++){const p=routePiece(R,rects[ri],ri);if(p)routes.push(p);}
+    const anchors=P.anchors.filter((a)=>rects.some((q)=>a.x>=q[0]&&a.x<=q[2]&&a.y>=q[1]&&a.y<=q[3]));
+    routes.sort((a,b)=>(PRI[a.hierarchy]-PRI[b.hierarchy])||(a.routeId<b.routeId?-1:1)||a.rectIndex-b.rectIndex);
+    return {plan:P,routes,anchors};
+  }
+  Object.assign(BR,{STRUCTURE_AREAS:PLANNED,STRUCTURE_PRIORITY:PRI,buildDistrictStructure,territoryStructure});
+})(typeof window!=='undefined'?window:globalThis);
