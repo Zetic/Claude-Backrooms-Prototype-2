@@ -111,7 +111,7 @@
         const ang=(Math.PI*2*i/n)+r.range(-.3,.3),d=radius*r.range(.28,.62);
         add(cx+Math.cos(ang)*d,cy+Math.sin(ang)*d,long*r.range(.42,.66),short*r.range(.5,.78),r.range(.3,.8));
       }
-      if(r.f()<(M.intrusion===undefined?.28:M.intrusion)){
+      if(r.f()<(M.intrusion===undefined?0.28:M.intrusion)){
         const ang=r.range(0,Math.PI*2),d=radius*r.range(.12,.42);
         holes.push(lobe(cx+Math.cos(ang)*d,cy+Math.sin(ang)*d,radius*r.range(.08,.15),radius*r.range(.08,.15),r.range(.2,.7)));
       }
