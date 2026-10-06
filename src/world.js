@@ -177,6 +177,7 @@
         r.obligations = I.obligations || [];
         r.realizations = I.realizations || [];
         r.anchors = I.anchors || [];
+        r.spacePlan = I.spacePlan || null;
       }
       return r;
     }
