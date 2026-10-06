@@ -1,6 +1,6 @@
 # Backrooms map prototype (v2)
 
-An infinite, deterministic 2D map of a Backrooms-style world. Open
+An infinite, deterministic 2-D map of a Backrooms-style world. Open
 `index.html` in a browser; there is no build step and nothing to install.
 
 - **Infinite.** The world is generated lazily around the view, and nothing
