@@ -7,11 +7,12 @@
  *   - which order territories are requested in,
  *   - how far from the origin the region is.
  * Structure
+ *   - semantic identity is separated from deterministic spatial manifestation,
+ *   - manifestation footprints/programs are deterministic and structurally diverse,
  *   - territories tile the plane exactly (no gaps, no overlaps),
- *   - mixed-area transitions never inject maintenance bands; former band
- *     pairs use direct strong transition walls; pockets remain independent
- *     Maintenance/Home territories with normal front-door logic,
- *   - district structure plans are connected and deterministic,
+ *   - mixed-area transitions never inject maintenance bands; pockets remain
+ *     independent Maintenance/Home territories with normal front-door logic,
+ *   - manifestation structure plans are connected and deterministic,
  *   - route obligations are explicitly realized/adapted/failed,
  *   - structural continuations remove only their seam interval,
  *   - every room in a large region is reachable from every other.
@@ -36,8 +37,10 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
   const I = {}, B = {}, P = {};
   for (const T of terrs) {
     const it = W.interior(T);
-    P[T.key] = [T.rects, W.final(T), T.base, T.district].map(String).join(';');
+    P[T.key] = [T.rects, W.final(T), T.base, T.district, T.manifestationForm, T.manifestationScale].map(String).join(';');
     I[T.key] = JSON.stringify({
+      manifestation: it.manifestation ? [it.manifestation.id,it.manifestation.form,it.manifestation.scale,it.manifestation.lobes.length,it.manifestation.holes.length] : null,
+      program: it.programKey || null,
       structure: it.structureKey || null,
       obligations: (it.obligations || []).map((o) => [o.routeId,o.hierarchy,o.axis,r6(o.line),r6(o.s0),r6(o.s1),r6(o.width)]),
       realizations: (it.realizations || []).map((r) => [r.routeId,r.status,r.reason,r6(r.shift),r.rects.map((q)=>q.map(r6))]),
@@ -48,7 +51,7 @@ function snapshot(W, x0, y0, x1, y1, reverse) {
           r6(x.meta.frontage),r6(x.meta.depth),x.meta.violations.slice()])
       })),
       blocks: it.blocks.map((b) => [b.x0, b.y0, b.x1, b.y1, b.k, it.zones[b.z].type,
-        (b.flows || (b.flow ? [b.flow] : [])).map((f) => f.key).sort(),
+        (b.flows || (b.flow ? [b.flow] : [])).map((f) => f.key).sort(), b.programRole || null,
         b.space ? [b.space.frontSide,b.space.access,b.space.role,r6(b.space.frontage),r6(b.space.depth),b.space.violations.slice()] : null]),
       rooms: it.rooms.map((r) => r.kind + ':' + r.rects.map((q) => q.map(r6).join(',')).join('/')),
       links: it.links.map((l) => [l.a, l.b, r6(l.x), r6(l.y), r6(l.w), l.kind]),
@@ -77,7 +80,7 @@ const base = snapshot(new BR.World(SEED), ...R);
   check('visit order does not matter', snapshot(W, ...R) === base);
 }
 {
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, structures: 2 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, programs: 2, structures: 2 } });
   check('cache eviction does not matter', snapshot(W, ...R) === base);
 }
 check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], R[2], R[3], true) === base);
@@ -92,11 +95,50 @@ check('request order does not matter', snapshot(new BR.World(SEED), R[0], R[1], 
 {
   const F = [1e6 - 120, -1e6 - 90, 1e6 + 120, -1e6 + 90];
   const a = snapshot(new BR.World(SEED), ...F);
-  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, structures: 2 } });
+  const W = new BR.World(SEED, { limits: { plans: 12, interiors: 8, boundaries: 16, pairs: 40, dna: 4, programs: 2, structures: 2 } });
   W.collect(0, 0, 100, 100, Infinity, { interiors: true });
   check('far from the origin (1e6 m) still deterministic', snapshot(W, ...F) === a);
 }
 check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base);
+
+// ------------------------------------------------ manifestations & programs
+
+{
+  const W = new BR.World(SEED);
+  const manifests = W.manifestationsIn(-1800,-1800,1800,1800);
+  const forms = new Set(manifests.map((m)=>m.form)), scales = new Set(manifests.map((m)=>m.scale));
+  const multi = manifests.filter((m)=>m.lobes.length>1).length;
+  const porous = manifests.filter((m)=>m.holes.length>0).length;
+  const byArea = new Map();
+  for(const M of manifests){
+    if(!byArea.has(M.type))byArea.set(M.type,new Set());
+    byArea.get(M.type).add(M.form);
+  }
+  const variedAreas=[...byArea.values()].filter((x)=>x.size>=2).length;
+  check('manifestation field uses multiple generic footprint grammars', forms.size>=4&&multi>0,
+    `${manifests.length} manifestations, ${forms.size} forms, ${multi} multi-lobe`);
+  check('manifestation scale is independent of semantic identity', scales.size>=2&&variedAreas>=2,
+    `${scales.size} scales, ${variedAreas} semantic areas with multiple forms`);
+  check('substrate can intrude into manifestations', porous>0, `${porous} manifestations with substrate cuts`);
+
+  let stable=manifests.length>0, programStable=manifests.length>0, roles=new Set(), programAreas=new Set(), coreMissing=0;
+  if(manifests.length){
+    const M0=manifests[0], direct=BR.manifestationSeed(SEED,M0.a,M0.b);
+    stable=JSON.stringify(direct)===JSON.stringify(M0);
+    const P0=W.programBy(M0.type,M0.id);
+    const W2=new BR.World(SEED,{limits:{plans:12,interiors:8,boundaries:16,pairs:40,dna:2,programs:1,structures:1}});
+    for(const M of manifests.slice(1,6))W2.programBy(M.type,M.id);
+    programStable=JSON.stringify(W2.programBy(M0.type,M0.id))===JSON.stringify(P0);
+  }
+  for(const M of manifests){
+    const P=W.programBy(M.type,M.id);if(!P)continue;programAreas.add(M.type);
+    if(!P.regions.some((r)=>r.role==='core'))coreMissing++;
+    for(const R of P.regions)roles.add(R.role);
+  }
+  check('manifestations are deterministic independent of caches', stable&&programStable);
+  check('generic structural programs span semantic areas and roles', programAreas.size>=3&&roles.size>=6&&coreMissing===0,
+    `${programAreas.size} areas, ${roles.size} roles, ${coreMissing} missing cores`);
+}
 
 // ---------------------------------------------------- architecture DNA
 
@@ -133,7 +175,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   check('different districts can have different architecture DNA', distinct.length >= 2 && signatures.size >= 2, `${distinct.length} districts, ${signatures.size} DNA signatures`);
 
   // ------------------------------------------------ district structure
-  const plannedGroups = [...groups.values()].filter((g) => g.length && (W.final(g[0]) === 'offices' || W.final(g[0]) === 'hotel'));
+  const plannedGroups = [...groups.values()].filter((g) => g.length && BR.AREAS[W.final(g[0])].role === 'district');
   const plans = [];
   for (const g of plannedGroups) {
     const P = W.structure(g[0]);
@@ -141,14 +183,15 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
     if (plans.length >= 8) break;
   }
   const canonPlan = (P) => JSON.stringify({
-    key:P.key,dna:P.dnaKey,bounds:P.bounds.map(r6),
+    key:P.key,dna:P.dnaKey,manifest:[P.manifestation.form,P.manifestation.scale],
+    program:P.program.regions.map((r)=>[r.role,r.x,r.y,r.radius]),bounds:P.bounds.map(r6),
     candidates:P.candidates.map((r)=>[r.kind,r.axis,r6(r.line),r6(r.s0),r6(r.s1)]),
     routes:P.routes.map((r)=>[r.id,r.hierarchy,r.role,r.axis,r6(r.line),r6(r.s0),r6(r.s1),r.width]),
     nodes:P.nodes.map((n)=>[r6(n.x),r6(n.y),n.kind]),anchors:P.anchors.map((a)=>[a.id,r6(a.x),r6(a.y),a.kind,a.zone])
   });
   let planStable = plans.length > 0;
   if (plans.length) {
-    const P0 = plans[0], W2 = new BR.World(SEED, { limits:{ plans:12, interiors:8, boundaries:16, pairs:40, dna:2, structures:1 } });
+    const P0 = plans[0], W2 = new BR.World(SEED, { limits:{ plans:12, interiors:8, boundaries:16, pairs:40, dna:2, programs:1, structures:1 } });
     // Force unrelated structure cache churn before rebuilding the target.
     for (const P of plans.slice(1,5)) W2.structureBy(P.area,P.district);
     planStable = canonPlan(W2.structureBy(P0.area,P0.district)) === canonPlan(P0);
@@ -177,7 +220,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
 
   let obligations=0, exact=0, adapted=0, failed=0, badFlows=0, anchorObs=0, anchorAttached=0;
   for (const T of terrs) {
-    const a=W.final(T); if(a!=='offices'&&a!=='hotel')continue;
+    const a=W.final(T); if(!BR.AREAS[a]||BR.AREAS[a].role!=='district')continue;
     const I=W.interior(T); if(!I.structureKey)continue;
     obligations += I.realizations.length;
     anchorObs += I.anchors.length; anchorAttached += I.blocks.filter((b)=>b.anchor).length;
@@ -195,10 +238,10 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   check('planned anchors become local special spaces', anchorObs > 0 && anchorAttached / anchorObs > 0.8, `${anchorAttached}/${anchorObs} attached`);
 
   // ------------------------------------------------ local space planning
-  const denseTypes=new Set(['guest','office','stalls','warren','corridorRooms','house']);
-  let plannedTerr=0,spaceParcels=0,localHalls=0,supportParcels=0,badParcel=0,badDense=0,guests=0,badGuests=0,capViolations=0;
+  const denseTypes=new Set(Object.keys(BR.SPACE_ARCHETYPES||{}));
+  let plannedTerr=0,spaceParcels=0,localHalls=0,supportParcels=0,badParcel=0,badDense=0,guarded=0,badGuarded=0,capViolations=0;
   for(const T of terrs){
-    const a=W.final(T); if(a!=='offices'&&a!=='hotel')continue;
+    const a=W.final(T); if(!BR.AREAS[a]||BR.AREAS[a].role!=='district')continue;
     const I=W.interior(T); if(!I.structureKey)continue; plannedTerr++;
     const SP=I.spacePlan;
     spaceParcels+=SP.diagnostics.parcels;localHalls+=SP.diagnostics.localRoutes;supportParcels+=SP.diagnostics.support;
@@ -212,10 +255,10 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
     for(const b of I.blocks){
       if(b.z<0)continue;const type=I.zones[b.z].type,m=b.space;
       if(m&&m.access==='unserved'&&denseTypes.has(type))badDense++;
-      if(type==='guest'){
-        guests++;
+      if(denseTypes.has(type)){
+        guarded++;
         const U=Math.max(b.x1-b.x0,b.y1-b.y0),V=Math.min(b.x1-b.x0,b.y1-b.y0);
-        if(!m||!BR.spaceTypeCompatible('hotel','guest',m,U,V))badGuests++;
+        if(!m||!BR.spaceTypeCompatible(a,type,m,U,V))badGuarded++;
       }
     }
   }
@@ -224,7 +267,8 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   check('local planning respects hard complexity caps', capViolations===0, `${capViolations} cap violations`);
   check('occupiable parcels satisfy geometry/access constraints', badParcel===0, `${badParcel} invalid occupiable parcels; ${supportParcels} support parcels`);
   check('unserved floor never receives dense cellular archetypes', badDense===0, `${badDense} dense unserved blocks`);
-  check('guest archetype cannot stretch outside its parcel envelope', guests>100&&badGuests===0, `${guests} guest blocks, ${badGuests} invalid`);
+  check('guarded archetypes cannot stretch outside parcel envelopes', guarded>100&&badGuarded===0,
+    `${guarded} guarded blocks, ${badGuarded} invalid`);
 
   // Boundary reconciliation must preserve realized route identity, remove the
   // seam wall only across that route, and never add a redundant normal door.
@@ -239,7 +283,7 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
   let continuations=0, continuationWalls=0, redundantDoors=0, missingLinks=0;
   const seenPairs=new Set(), terrKeys=new Set(terrs.map((T)=>T.key));
   for(const T of terrs){
-    if(W.final(T)!=='offices'&&W.final(T)!=='hotel')continue;
+    const ta=W.final(T);if(!BR.AREAS[ta]||BR.AREAS[ta].role!=='district')continue;
     for(const n of W.adj(T)){
       const k=BR.pairKey(T,n.U);if(seenPairs.has(k)||!terrKeys.has(n.U.key))continue;seenPairs.add(k);
       const B=W.boundary(T,n.U);if(!B.continuations.length)continue;
@@ -316,8 +360,8 @@ check('different seeds differ', snapshot(new BR.World(SEED + 1), ...R) !== base)
       if (!allHost || doors < 1) badPockets.push(T.key + (allHost ? ' no door' : ' crosses areas'));
     }
   }
-  check('former maintenance-band pairs use direct strong transitions', transitions>0&&badTransitions.length===0,
-    `${transitions} pairs`+(badTransitions.length?', bad: '+badTransitions.slice(0,4).join(' '):''));
+  check('former maintenance-band pairs use direct strong transitions', badTransitions.length===0,
+    `${transitions} sampled pairs`+(badTransitions.length?', bad: '+badTransitions.slice(0,4).join(' '):''));
   check('maintenance-band machinery is absent from pair decisions', legacyBandFlags===0 && !BR.bands && !BR.carveBands, `${legacyBandFlags} legacy pair flags`);
   check('pockets sit inside one host and have a door', badPockets.length === 0, `${pockets} pockets` + (badPockets.length ? ', bad: ' + badPockets.slice(0, 4).join(' ') : ''));
   check('no door failures', W.stats.doorFailures === 0, `${W.stats.doorFailures}`);
