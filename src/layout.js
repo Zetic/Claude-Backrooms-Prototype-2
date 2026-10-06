@@ -305,6 +305,6 @@
 
   Object.assign(BR, {
     LAYOUT: CFG, superCell, buildPlan, segBetween, adjacency, finalArea, frontOf,
-    pairKey, pairInfo, doorCount, territoryAt
+    pairKey, pairInfo, doorCount, bypass, territoryAt
   });
 })(typeof window !== 'undefined' ? window : globalThis);
