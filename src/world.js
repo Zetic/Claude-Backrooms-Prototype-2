@@ -12,7 +12,7 @@
   'use strict';
   const BR = root.BR;
 
-  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, dna: 4000, structures: 2000 };
+  const DEFAULT_LIMITS = { plans: 6000, interiors: 5000, boundaries: 14000, pairs: 60000, manifests: 2400, dna: 4000, programs: 2000, structures: 2000 };
   const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
 
   class World {
@@ -23,9 +23,11 @@
       this.interiors = new Map();
       this.boundaries = new Map();
       this.pairs = new Map();
+      this.manifests = new Map();
       this.dna = new Map();
+      this.programs = new Map();
       this.structures = new Map();
-      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
+      this.stats = { interiorMs: 0, interiorsBuilt: 0, boundariesBuilt: 0, programsBuilt: 0, structuresBuilt: 0, doorFailures: 0 };
     }
     evict(map, n) {
       const it = map.keys();
@@ -49,7 +51,35 @@
     }
     adj(T) { return BR.adjacency(this, T); }
     final(T) { return BR.finalArea(this, T); }
+    manifestSeed(a,b) {
+      const k=a+','+b;
+      let M=this.manifests.get(k);
+      if(M){this.manifests.delete(k);this.manifests.set(k,M);return M;}
+      M=BR.manifestationSeed(this.seed,a,b);
+      this.manifests.set(k,M);
+      if(this.manifests.size>this.limits.manifests)this.evict(this.manifests,Math.max(1,this.limits.manifests>>2));
+      return M;
+    }
     architecture(T) { return BR.architectureDNA(this, T, this.final(T)); }
+    manifestation(T) {
+      if (!T || !T.district) return null;
+      const ij=T.district.split(',');
+      return this.manifestSeed(+ij[0],+ij[1]);
+    }
+    programBy(area, district) {
+      if (!area || !district || !BR.STRUCTURE_AREAS.has(area)) return null;
+      const k=area+':'+district;
+      let P=this.programs.get(k);
+      if(P){this.programs.delete(k);this.programs.set(k,P);return P;}
+      P=BR.buildManifestationProgram(this,area,district);
+      if(P){
+        this.stats.programsBuilt++;
+        this.programs.set(k,P);
+        if(this.programs.size>this.limits.programs)this.evict(this.programs,Math.max(1,this.limits.programs>>2));
+      }
+      return P;
+    }
+    program(T) { return this.programBy(this.final(T),T.district); }
     structureBy(area, district) {
       if (!area || !district || !BR.STRUCTURE_AREAS.has(area)) return null;
       const k = area + ':' + district;
@@ -75,6 +105,22 @@
           if (!P || P.bounds[2] < x0 || P.bounds[0] > x1 || P.bounds[3] < y0 || P.bounds[1] > y1) continue;
           out.push(P);
         }
+      return out;
+    }
+    manifestationsIn(x0,y0,x1,y1) {
+      const C=BR.AREA_CFG.districtCell,out=[],R=BR.MANIFEST_SEARCH_CELLS||1;
+      for(let a=Math.floor(x0/C)-R;a<=Math.floor(x1/C)+R;a++)for(let b=Math.floor(y0/C)-R;b<=Math.floor(y1/C)+R;b++){
+        const M=this.manifestSeed(a,b);if(!M.exists)continue;
+        const B=M.bounds;if(B[2]<x0||B[0]>x1||B[3]<y0||B[1]>y1)continue;
+        out.push(M);
+      }
+      return out;
+    }
+    programsIn(x0,y0,x1,y1) {
+      const out=[];
+      for(const M of this.manifestationsIn(x0,y0,x1,y1)){
+        const P=this.programBy(M.type,M.id);if(P)out.push(P);
+      }
       return out;
     }
     color(T) {
@@ -166,7 +212,11 @@
     inspect(x, y) {
       const T = BR.territoryAt(this, x, y);
       if (!T) return null;
-      const r = { territory: T, area: this.final(T), base: T.base, district: T.district };
+      const r = { territory: T, area: this.final(T), base: T.base, district: T.district,
+        manifestationId: T.manifestation || T.district };
+      r.manifestation = this.manifestation(T);
+      r.program = this.program(T);
+      r.programRole = r.program ? BR.programRoleAt(r.program,x,y) : null;
       r.dna = this.architecture(T);
       r.structure = this.structure(T);
       const I = this.interiors.get(T.key);

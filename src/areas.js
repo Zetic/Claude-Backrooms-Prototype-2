@@ -1,15 +1,17 @@
 /*
  * areas.js - level 1: what kind of space is where, and how kinds meet.
  *
- * Every territory belongs to exactly one AREA. Areas have a ROLE:
- *   base     - Backrooms: fills everything nothing else claims
- *   district - Offices, Hotel, Poolrooms, Parking: large compact regions
- *   pocket   - Home, Maintenance: one territory, fully inside one host
+ * Every territory belongs to exactly one semantic AREA. Spatial extent is a
+ * separate concern:
+ *   base     - dominant substrate when no manifestation claims the point
+ *   district - semantic identity realized through a generic manifestation
+ *   pocket   - one contained territory replacing a compatible host
  *
- * Districts come from a deterministic field: seeds on a coarse jittered
- * lattice, each a warped box/ellipse blend. A point's area is the district
- * whose shape it is deepest inside, else Backrooms. The field is sampled at
- * territory centres, so area edges always follow territory edges (walls).
+ * District-role areas no longer imply one huge compact biome. The generic
+ * manifestation layer chooses scale/footprint independently, and may produce
+ * compact, elongated, branched, fragmented, interwoven or regional forms.
+ * The field is sampled at territory centres, so final semantic edges still
+ * follow territory edges exactly.
  *
  * RULES says how every pair of areas meets: wall type, door spacing and how
  * often a pair may have no door at all. Mixed-area transitions remain direct
@@ -36,6 +38,7 @@
       style: 'irregular',
       zones: { open: 5, split: 1.2, office: 1.1, warren: 0.8, ring: 1.2, gallery: 0.8, stalls: 0.5, store: 0.4, courtyard: 0.4, stairs: 0.3, round: 0.15, corridorRooms: 0.3 },
       landmarks: { grandHall: 3, atrium: 2, theatre: 1, longGallery: 1.5 }, landmarkP: 0.03,
+      architecture: { corridor3:0.32, module:[4,8], spine:[28,52], cross:[40,68], crossChance:[0.25,0.55] },
       roomScale: [0.95, 1.45], pillars: 0.5, pOpen: [0.15, 0.45], pLoop: [0.15, 0.45], pWide: [0.08, 0.3]
     },
     offices: {
@@ -44,6 +47,13 @@
       style: 'spine', chunk: [8, 22], depthMin: 6,
       zones: { office: 4, open: 1.6, stalls: 1.4, warren: 1, store: 0.6, corridorRooms: 0.4, split: 0.5 },
       landmarks: { atrium: 1 }, landmarkP: 0.02,
+      architecture: { corridor3:0.32, module:[4,7], spine:[30,48], cross:[36,58], crossChance:[0.38,0.68] },
+      manifestation: {
+        weight:3,
+        forms:{compact:1.1,elongated:1.2,branched:2.4,fragmented:1.25,interwoven:1.45,regional:0.22},
+        scales:{small:1.4,medium:3.2,large:0.8,regional:0.08}, scale:0.95, intrusion:0.22
+      },
+      program:{roles:{core:1,branch:1.8,open:1.15,service:0.7,landmark:0.45,connector:0.9,terminal:0.6,void:0.25,repeating:2.2},routeDensity:0.95},
       roomScale: [0.9, 1.2], pillars: 0.6, pOpen: [0.05, 0.2], pLoop: [0.1, 0.3], pWide: [0.03, 0.12]
     },
     hotel: {
@@ -52,41 +62,68 @@
       style: 'hotel', chunk: [4, 8], depthMin: 4,
       zones: { guest: 5.5, open: 1.5, gallery: 0.8, courtyard: 0.45 },
       landmarks: { atrium: 1 }, landmarkP: 0.03,
+      architecture: { corridor3:0.22, module:[4,6], spine:[26,38], cross:[42,64], crossChance:[0.28,0.52] },
+      manifestation: {
+        weight:1.1,
+        forms:{compact:1.15,elongated:1.8,branched:2.1,fragmented:1.05,interwoven:1.35,regional:0.16},
+        scales:{small:1.5,medium:3.4,large:0.7,regional:0.06}, scale:0.92, intrusion:0.2
+      },
+      program:{roles:{core:1.2,branch:1.9,open:1.2,service:0.8,landmark:0.5,connector:0.9,terminal:0.8,void:0.35,repeating:2.1},routeDensity:0.9},
       roomScale: [0.9, 1.1], pillars: 0.7, pOpen: [0, 0.05], pLoop: [0, 0.1], pWide: [0, 0.05]
     },
     poolrooms: {
       name: 'Poolrooms', role: 'district', color: '#e3ebeb',
       split: { tmin: 22, tmax: 70, pSplit: 0.35, maxAspect: 2.5 },
       style: 'hall',
+      zones: { pools:4, pool:1.2, courtyard:0.7, open:0.9, stalls:0.45, room:0.3, stairs:0.2 },
       main: { pools: 4, pool: 1, courtyard: 0.4, open: 0.6 },
       service: { stalls: 2, room: 1.2, stairs: 0.3 },
       landmarks: { poolHall: 1 }, landmarkP: 0.05,
+      architecture: { corridor3:0.58, module:[5,9], spine:[34,58], cross:[46,74], crossChance:[0.25,0.5] },
+      manifestation: {
+        weight:1.4,
+        forms:{compact:0.7,elongated:0.8,branched:1.35,fragmented:1.15,interwoven:1.65,regional:0.75},
+        scales:{small:0.7,medium:2.1,large:1.6,regional:0.55}, scale:1.05, intrusion:0.28
+      },
+      program:{roles:{core:1.2,branch:1.1,open:2.1,service:0.55,landmark:0.65,connector:0.8,terminal:0.65,void:0.9,repeating:1.1},routeDensity:0.72},
       roomScale: [1, 1.3], pillars: 0.7, pOpen: [0.2, 0.5], pLoop: [0.2, 0.4], pWide: [0.2, 0.45]
     },
     parking: {
       name: 'Parking', role: 'district', color: '#bebdb7',
       split: { tmin: 26, tmax: 84, pSplit: 0.3, maxAspect: 2.5 },
       style: 'hall',
+      zones: { parking:4, store:1, open:0.8, room:0.45, stairs:0.28 },
       main: { parking: 4, store: 1, open: 0.7 },
       service: { room: 1.5, stairs: 0.8 },
+      architecture: { corridor3:0.72, module:[6,10], spine:[38,64], cross:[48,78], crossChance:[0.22,0.48] },
+      manifestation: {
+        weight:1.4,
+        forms:{compact:0.75,elongated:1.5,branched:1.1,fragmented:0.75,interwoven:0.7,regional:1.0},
+        scales:{small:0.45,medium:1.65,large:2.0,regional:0.8}, scale:1.08, intrusion:0.1
+      },
+      program:{roles:{core:1,branch:1.1,open:1.5,service:0.85,landmark:0.22,connector:0.8,terminal:0.45,void:0.15,repeating:1.8},routeDensity:0.68},
       roomScale: [1.1, 1.4], pillars: 0.9, pOpen: [0.3, 0.6], pLoop: [0.2, 0.4], pWide: [0.3, 0.6]
     },
     home: {
       name: 'Home', role: 'pocket', color: '#cfa985',
       pocket: { hosts: ['backrooms', 'offices', 'hotel'], p: 0.045, minDim: 14, maxDim: 42, salt: 61 },
       style: 'house',
+      architecture: { corridor3:0.05, module:[4,7], spine:[30,48], cross:[42,68], crossChance:[0.2,0.45] },
       roomScale: [0.9, 1.1], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.1]
     },
     maintenance: {
       name: 'Maintenance', role: 'pocket', color: '#b5b2a8',
       pocket: { hosts: ['backrooms', 'parking', 'poolrooms'], p: 0.025, minDim: 12, maxDim: 40, salt: 62 },
       style: 'utility',
+      architecture: { corridor3:0.15, module:[4,7], spine:[28,46], cross:[40,64], crossChance:[0.2,0.4] },
       roomScale: [0.7, 0.9], pillars: 0, pOpen: [0, 0.1], pLoop: [0, 0.1], pWide: [0, 0.05]
     }
   };
   const ORDER = Object.keys(AREAS);
-  const POCKETS = ['home', 'maintenance'];
-  const DISTRICT_TYPES = { offices: 3, parking: 1.4, poolrooms: 1.4, hotel: 1.1 };
+  const BASE_AREA = ORDER.find((k)=>AREAS[k].role==='base') || ORDER[0];
+  const POCKETS = ORDER.filter((k)=>AREAS[k].role==='pocket');
+  const MANIFEST_TYPES = {};
+  for(const k of ORDER) if(AREAS[k].role==='district') MANIFEST_TYPES[k]=(AREAS[k].manifestation&&AREAS[k].manifestation.weight)||1;
 
   // ----------------------------------------------------------------- rules
   /**
@@ -120,39 +157,14 @@
     const k = a < b ? a + '|' + b : b + '|' + a;
     return RULES[k] || DEFAULT_RULE;
   }
-  function isPocket(area) { return area === 'home' || area === 'maintenance'; }
+  function isPocket(area) { return !!AREAS[area] && AREAS[area].role === 'pocket'; }
 
-  // ----------------------------------------------------------- the field
-  const CFG = { districtCell: 380, districtP: 0.78, warp: 60, warpScale: 260 };
-
-  function districtSeed(seed, a, b) {
-    const r = new Rng(hash4(seed, a, b, S.DIST));
-    const C = CFG.districtCell;
-    const exists = r.f() < CFG.districtP;
-    const cx = (a + 0.15 + 0.7 * r.f()) * C, cy = (b + 0.15 + 0.7 * r.f()) * C;
-    const type = r.weighted(DISTRICT_TYPES);
-    const rx = 100 + 140 * r.f(), ry = rx * (0.65 + 0.7 * r.f());
-    const k = 0.3 + 0.7 * r.f();               // 0 = ellipse, 1 = box
-    return { exists, cx, cy, rx, ry, k, type, id: a + ',' + b };
-  }
-
-  /** Base area at a point: { area, district } (district id, or null for Backrooms). */
-  function areaAt(W, x, y) {
-    const seed = W.seed, ws = CFG.warpScale;
-    const wx = x + CFG.warp * 2 * (contrast(fbm(seed ^ S.WARPX, x / ws, y / ws, 2), 2) - 0.5);
-    const wy = y + CFG.warp * 2 * (contrast(fbm(seed ^ S.WARPY, x / ws, y / ws, 2), 2) - 0.5);
-    const C = CFG.districtCell, da = Math.floor(wx / C), db = Math.floor(wy / C);
-    let best = 1, area = 'backrooms', district = null;
-    for (let a = da - 1; a <= da + 1; a++) for (let b = db - 1; b <= db + 1; b++) {
-      const d = districtSeed(seed, a, b);
-      if (!d.exists) continue;
-      const nx = Math.abs(wx - d.cx) / d.rx, ny = Math.abs(wy - d.cy) / d.ry;
-      const dist = (1 - d.k) * Math.sqrt(nx * nx + ny * ny) + d.k * Math.max(nx, ny);
-      if (dist < best) { best = dist; area = d.type; district = d.id; }
-    }
-    return { area, district };
-  }
-
+  // ------------------------------------------------ manifestation field
+  // Compatibility names are retained because structure/layout APIs already
+  // use `district` as the stable manifestation identifier.
+  const CFG = { districtCell:380, districtP:0.74, warp:42, warpScale:280 };
+  function districtSeed(seed,a,b) { return BR.manifestationSeed(seed,a,b); }
+  function areaAt(W,x,y) { return BR.manifestationAt(W,x,y); }
 
   // ------------------------------------------------------ architecture DNA
   // Territories are generation ownership units, not architectural identity
@@ -163,8 +175,8 @@
   const DNA_REGION = 760;
 
   function architectureRegion(T, area) {
-    const A = AREAS[area] || AREAS.backrooms;
-    if (T.district && (A.role === 'district' || A.role === 'pocket' || A.role === 'network')) {
+    const A = AREAS[area] || AREAS[BASE_AREA];
+    if (T.district && A.role === 'district') {
       const p = T.district.split(',');
       return { key: 'district:' + area + ':' + T.district, a: +p[0], b: +p[1], district: true };
     }
@@ -173,7 +185,7 @@
   }
 
   function architectureDNA(W, T, area) {
-    area = area || T.base || 'backrooms';
+    area = area || T.base || BASE_AREA;
     const reg = architectureRegion(T, area);
     if (W.dna && W.dna.has(reg.key)) {
       const hit = W.dna.get(reg.key);
@@ -186,15 +198,14 @@
     let majorAxis;
     if (reg.district && T.district) {
       const d = districtSeed(W.seed, reg.a, reg.b);
-      const ratio = d.rx / Math.max(1, d.ry);
-      majorAxis = ratio > 1.12 ? 'x' : ratio < 0.89 ? 'y' : (rng.f() < 0.5 ? 'x' : 'y');
+      majorAxis = d.axis || (rng.f() < 0.5 ? 'x' : 'y');
     } else majorAxis = rng.f() < 0.5 ? 'x' : 'y';
 
-    const corridorWidth = rng.f() < (area === 'hotel' ? 0.78 : 0.68) ? 2 : 3;
-    const module = area === 'hotel' ? rng.int(4, 6) : area === 'offices' ? rng.int(4, 7) : rng.int(4, 8);
-    const spineSpacing = area === 'hotel' ? rng.int(26, 38) : area === 'offices' ? rng.int(30, 48) : rng.int(28, 52);
-    const crossSpacing = area === 'hotel' ? rng.int(42, 64) : area === 'offices' ? rng.int(36, 58) : rng.int(40, 68);
-    const A = AREAS[area] || AREAS.backrooms;
+    const A = AREAS[area] || AREAS[BASE_AREA], AC=A.architecture||AREAS[BASE_AREA].architecture;
+    const corridorWidth = rng.f() < (1-(AC.corridor3||0.32)) ? 2 : 3;
+    const module = rng.int(AC.module[0], AC.module[1]);
+    const spineSpacing = rng.int(AC.spine[0], AC.spine[1]);
+    const crossSpacing = rng.int(AC.cross[0], AC.cross[1]);
     const zoneWeights = {};
     for (const k in (A.zones || {})) zoneWeights[k] = A.zones[k] * rng.range(0.78, 1.22);
 
@@ -202,7 +213,7 @@
       key: reg.key, area, majorAxis, corridorWidth, module,
       spineSpacing, spinePhase: rng.int(0, spineSpacing - 1),
       crossSpacing, crossPhase: rng.int(0, crossSpacing - 1),
-      crossChance: area === 'hotel' ? rng.range(0.28, 0.52) : area === 'offices' ? rng.range(0.38, 0.68) : rng.range(0.25, 0.55),
+      crossChance: rng.range(AC.crossChance[0], AC.crossChance[1]),
       roomScale: rng.range(0.91, 1.09),
       openness: rng.range(0.82, 1.18),
       loopiness: rng.range(0.82, 1.18),
@@ -238,5 +249,6 @@
     return BR.scaleRgb(BR.hexToRgb(AREAS[area].color), 0.98 + 0.04 * jit);
   }
 
-  Object.assign(BR, { AREAS, AREA_ORDER: ORDER, POCKETS, RULES, rule, isPocket, areaAt, areaColor, districtSeed, architectureDNA, ARCHITECTURE_DNA_REGION: DNA_REGION, AREA_CFG: CFG });
+  Object.assign(BR, { AREAS, AREA_ORDER: ORDER, BASE_AREA, POCKETS, MANIFEST_TYPES, RULES, rule, isPocket,
+    areaAt, areaColor, districtSeed, architectureDNA, ARCHITECTURE_DNA_REGION: DNA_REGION, AREA_CFG: CFG });
 })(typeof window !== 'undefined' ? window : globalThis);

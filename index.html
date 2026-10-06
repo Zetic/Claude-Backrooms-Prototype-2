@@ -68,17 +68,21 @@
   <div class="sec">Generation stage</div>
   <select id="stage" aria-label="Generation stage">
     <option value="final">Final architecture</option>
-    <option value="dna">1 · DNA regions</option>
-    <option value="candidates">2 · Candidate lattice</option>
-    <option value="selected">3 · Selected structure</option>
-    <option value="obligations">4 · Territory obligations</option>
-    <option value="realized">5 · Realized circulation</option>
-    <option value="space">6 · Local space plan</option>
-    <option value="boundaries">7 · Boundary reconciliation</option>
+    <option value="manifestations">1 · Area manifestations</option>
+    <option value="program">2 · Structural program</option>
+    <option value="dna">3 · DNA regions</option>
+    <option value="candidates">4 · Candidate lattice</option>
+    <option value="selected">5 · Selected structure</option>
+    <option value="obligations">6 · Territory obligations</option>
+    <option value="realized">7 · Realized circulation</option>
+    <option value="space">8 · Local space plan</option>
+    <option value="boundaries">9 · Boundary reconciliation</option>
     <option value="full">Full generation debug</option>
   </select>
   <div class="sec">Generation debug</div>
   <div class="grid2">
+    <label class="tg"><input type="checkbox" id="o-manifestations"> Manifestations</label>
+    <label class="tg"><input type="checkbox" id="o-programRegions"> Program regions</label>
     <label class="tg"><input type="checkbox" id="o-dnaDebug"> DNA regions</label>
     <label class="tg"><input type="checkbox" id="o-candidateRoutes"> Candidate lattice</label>
     <label class="tg"><input type="checkbox" id="o-selectedRoutes"> Selected routes</label>
@@ -99,6 +103,7 @@
 
 <script src="src/core.js"></script>
 <script src="src/areas.js"></script>
+<script src="src/manifestation.js"></script>
 <script src="src/layout.js"></script>
 <script src="src/structure.js"></script>
 <script src="src/spaceplan.js"></script>
@@ -114,7 +119,7 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const $ = (id) => document.getElementById(id);
-  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms', 'dnaDebug', 'candidateRoutes', 'selectedRoutes', 'structureNodes', 'obligations', 'realizedRoutes', 'continuations', 'routeFailures', 'spaceParcels', 'spaceAccess', 'localCirculation', 'spaceViolations'];
+  const OPTS = ['walls', 'areaMap', 'territories', 'cells', 'rooms', 'manifestations', 'programRegions', 'dnaDebug', 'candidateRoutes', 'selectedRoutes', 'structureNodes', 'obligations', 'realizedRoutes', 'continuations', 'routeFailures', 'spaceParcels', 'spaceAccess', 'localCirculation', 'spaceViolations'];
 
   // ---------- state (mirrored into the URL hash so views are shareable)
   const Q = new URLSearchParams(location.hash.slice(1));
@@ -195,6 +200,9 @@
     const A = BR.AREAS[r.area];
     let html = '<b>' + A.name + '</b> &middot; ' + A.role + (r.area !== r.base ? ' in ' + BR.AREAS[r.base].name : '') +
       '<br>territory ' + T.key + ' &middot; ' + (b[2] - b[0]) + '×' + (b[3] - b[1]) + ' m';
+    if (r.manifestation) html += '<br>manifestation ' + r.manifestation.id + ' &middot; ' + r.manifestation.form + ' &middot; ' + r.manifestation.scale +
+      ' &middot; ' + r.manifestation.lobes.length + ' lobes' + (r.manifestation.holes.length ? ' &middot; ' + r.manifestation.holes.length + ' substrate cuts' : '');
+    if (r.programRole) html += '<br>program role ' + r.programRole;
     if (r.dna) html += '<br>DNA ' + r.dna.key + ' &middot; ' + r.dna.majorAxis.toUpperCase() + '-axis &middot; ' + r.dna.corridorWidth + 'm corridor &middot; ' + r.dna.module + 'm module';
     if (r.structure) html += '<br>structure ' + r.structure.key + ' &middot; ' + r.structure.routes.length + ' routes &middot; ' + r.structure.anchors.length + ' anchors';
     if (r.block) {
@@ -302,10 +310,12 @@
   })(lastT);
 
   // ---------- generation-stage presets
-  const DEBUG_KEYS = ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes','obligations','realizedRoutes','continuations','routeFailures','spaceParcels','spaceAccess','localCirculation','spaceViolations'];
+  const DEBUG_KEYS = ['manifestations','programRegions','dnaDebug','candidateRoutes','selectedRoutes','structureNodes','obligations','realizedRoutes','continuations','routeFailures','spaceParcels','spaceAccess','localCirculation','spaceViolations'];
   const STAGES = {
     final: [],
-    dna: ['dnaDebug'],
+    manifestations: ['manifestations'],
+    program: ['manifestations','programRegions'],
+    dna: ['manifestations','programRegions','dnaDebug'],
     candidates: ['dnaDebug','candidateRoutes'],
     selected: ['dnaDebug','candidateRoutes','selectedRoutes','structureNodes'],
     obligations: ['selectedRoutes','structureNodes','obligations'],

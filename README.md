@@ -21,9 +21,9 @@ An infinite, deterministic 2D map of a Backrooms-style world. Open
 | Zoom | mouse wheel, pinch, `+` / `-` |
 | Area map | `M` or the toggle |
 | Overlays | Territories, Super-cells (the lattice), Room graph |
-| Generation stage | DNA → candidate lattice → selected structure → obligations → realized routes → local space plan → boundary reconciliation |
-| Debug overlays | DNA/structure, obligations, realized routes, local circulation, space parcels/access/violations, continuations |
-| Inspect | hover: area, DNA, structure, route realization, local-space geometry/access, zone, room |
+| Generation stage | manifestation → structural program → DNA → selected structure → obligations → realized routes → local space plan → boundaries |
+| Debug overlays | manifestation lobes/cuts, program roles, DNA/structure, circulation, parcels/access/violations, continuations |
+| Inspect | hover: semantic area, manifestation form/scale, program role, DNA, circulation, local-space geometry/access, zone, room |
 
 The URL hash keeps the seed, position, zoom and toggles
 (`#seed=31337&x=0&y=0&z=2&rooms=1`), so any view can be shared or bookmarked.
@@ -31,112 +31,117 @@ The URL hash keeps the seed, position, zoom and toggles
 ## How a map is made
 
 ```
-Areas          what kind of place: Backrooms, Offices, Hotel, ...       areas.js
-  DNA            persistent architectural identity for a district/region areas.js
-    Structure      major/secondary/service circulation + anchors          structure.js
-      Territories    20-60 m ownership blocks that tile the plane         layout.js
-        Obligations   clipped pieces of the district structure             structure.js
-          Local plan  access catchments, local halls, usable parcels       spaceplan.js
-            Archetypes + detailed rooms                                    zones.js, interior.js
-Boundaries      reconcile shared structures and ordinary doors             boundary.js
+Semantic area       architectural identity / vocabulary                    areas.js
+  Manifestation       spatial extent: compact/branched/interwoven/etc.      manifestation.js
+    Structural program generic internal roles: core/branch/open/service/... manifestation.js
+      Architecture DNA persistent module, axis and circulation language     areas.js
+        Structure       selected major/secondary/service circulation         structure.js
+          Territories     exact ownership blocks tiling the plane            layout.js
+            Obligations   clipped structure inside each territory            structure.js
+              Local plan  access catchments, local halls, usable parcels     spaceplan.js
+                Archetypes + detailed rooms                                  zones.js, interior.js
+Boundaries           reconcile structures, walls and doors                  boundary.js
 ```
 
-Territories are ownership/build units. They no longer decide whether a major
-Hotel/Office route exists. The district structure plan decides that first in
-world coordinates; each territory only realizes the piece crossing its owned
-rectangles.
+The central distinction is now **identity versus extent**. An area name says
+what architectural vocabulary is available; it no longer means that one huge
+continuous region of that architecture must fill the world.
 
-### 1. Territories: a pinwheel tiling (layout.js)
+### 1. Territories: exact ownership tiling (layout.js)
 
-The plane is split into 150 m super-cells. Each lattice edge is pushed 5-34 m
-off the grid line, and the direction alternates in a checkerboard. That way the
-four edges meeting at a lattice vertex always leave a small gap box (never an
-overlap). Each gap box is handed to one of its four cells as an "ear". The
-result is an exact tiling with no T-junction grid showing.
+The plane is still split into 150 m offset super-cells. Their shifted edges and
+owned gap boxes form an exact rectilinear tiling with no gaps or overlaps.
+Super-cells are recursively split into territories using the semantic area at
+each piece's centre.
 
-Each cell's core and ears are then split recursively into territories, using
-the split parameters of the area at each piece's centre. Ears that are too
-small (under 12 m or 240 m²) merge into the core territory they share the
-longest edge with.
+Territories remain implementation/ownership units. They do not determine the
+shape of a manifestation, the existence of major circulation, or the internal
+program of a complex.
 
-Because territories are cut from these offset super-cells, their outlines are
-chunky and rectilinear rather than grid-like.
+### 2. Semantic areas and spatial manifestations (areas.js, manifestation.js)
 
-### 2. Areas: a field and pockets (areas.js)
+The currently configured semantic roles are shown below. These names are
+configuration, not generator branches: manifestation and structure
+participation are derived from each area's `role`.
 
-- **Districts** (Offices, Hotel, Poolrooms, Parking): seeds sit on a jittered
-  380 m lattice. Each one is a warped blend of an ellipse and a box. A
-  territory takes the district at its centre.
-- **Backrooms** is what remains: the base area that everything else sits in.
-- **Pockets** (Home, Maintenance) replace a whole territory. They are only
-  placed where every neighbour has the same host area, so a pocket always sits
-  fully inside one host. Each pocket gets exactly one front door, onto a
-  non-pocket neighbour.
+The currently configured semantic roles are:
 
-Area roles: Backrooms is *base*; Offices, Hotel, Poolrooms and Parking are
-*districts*; Home and Maintenance are *pockets*. Maintenance exists as real
-territories/plant spaces only. It is not generated as a strip around mixed
-areas or along super-cell edges.
+- **Backrooms** — dominant substrate when no manifestation claims a point.
+- **Offices, Hotel, Poolrooms, Parking** — manifestation-bearing areas.
+- **Home, Maintenance** — contained pocket territories.
 
+For manifestation-bearing areas, a coarse deterministic seed first chooses an
+area identity from the configured weights. A completely separate generic
+manifestation planner then chooses:
 
-### Architecture DNA: continuity across territories
+- **scale** — small, medium, large or regional;
+- **footprint grammar** — compact, elongated, branched, fragmented,
+  interwoven or regional;
+- a set of overlapping architectural lobes;
+- optional substrate cuts/holes that let the surrounding fabric intrude.
 
-Territories are generation ownership units, but they are no longer treated as
-independent architectural identities. Each district gets one deterministic
-architecture-DNA record (Backrooms/base space uses larger coarse DNA regions).
-Territories in that region inherit the same preferred axis, corridor width,
-module size, spine/cross-corridor lattice, density biases and zone-weight
-profile, with only small local variation.
+Those choices come from the area's data weights. The manifestation generator
+does not contain Hotel/Office/Poolrooms/Parking branches.
 
-For Offices and Hotel this is also spatial: corridor spines first try to land
-on the district's shared world-coordinate lattice. Adjacent territories can
-therefore continue the same corridor line instead of independently choosing a
-new vertical/horizontal offset at every territory seam. If a territory is too
-small or the shared line cannot fit safely, it falls back to the old local
-placement rule. The DNA does **not** force every territory to be identical or
-turn a whole district into one corridor; it provides a common architectural
-language and a set of recurring circulation lines.
+This allows the same semantic identity to appear as a small embedded complex
+in one place and a larger or more fragmented structure elsewhere. Conversely,
+different semantic identities can use the same spatial grammar.
 
-Hover inspection shows the DNA key, preferred axis, corridor width and module
-size for the territory under the pointer.
+The currently configured Backrooms substrate is intentionally dominant, so
+manifestations read as structures/enclaves woven through it rather than every
+coarse field seed becoming a giant biome.
 
-For Offices and Hotel, DNA now supplies the **candidate lattice**, not the
-final corridor pattern. The district structure planner selects a connected
-subset from that lattice and gives those selected routes stable identities.
+Home and Maintenance keep their pocket behavior. Maintenance remains an actual
+plant/utility territory only; automatic Maintenance boundary strips were
+removed in the previous milestone and remain removed here.
 
-### 3. District structure: what actually exists (structure.js)
+### 3. Generic structural program, DNA and circulation
 
-Each Hotel/Office district deterministically creates one structure plan before
-individual interiors are generated.
+Each manifestation receives a deterministic **structural program** before
+territory interiors are built. The program uses semantic-neutral region roles:
 
-The plan contains:
+| Role | Structural meaning |
+|---|---|
+| core | primary organizing region |
+| branch | extension/wing from the core |
+| open | low-partition large space |
+| service | support/back-of-house region |
+| landmark | focal/distinctive region |
+| connector | joins lobes or major regions |
+| terminal | destination/end region |
+| void | courtyard/substrate intrusion/open gap |
+| repeating | dense modular region |
 
-- a **major trunk** and, where the district supports it, one parallel wing;
-- **secondary branches/bridges** selected at the district level;
-- an attached **service circulation** network;
-- explicit **junction** and **terminus** nodes;
-- topology-attached special-space anchors such as Hotel lobbies/ballrooms/
-  courtyards and Office atriums/open workspaces;
-- the full DNA candidate lattice for diagnostics, even though only a sparse
-  subset is selected.
+The area grammar maps those roles into its own semantic archetypes through
+weights. For example, a repeating region can prefer one area's cellular rooms,
+another area's pools, or another area's parking modules without the structural
+planner knowing those area names.
 
-The selected graph is deliberately not a complete rectangular grid. Branches
-can terminate intentionally; a dead end is a planned property of the district
-rather than the result of one territory independently deciding not to continue
-a corridor.
+Architecture DNA remains the persistent design-language layer: preferred axis,
+corridor width, module, candidate spine/cross lattice and density biases. These
+parameters are now also data-driven from area definitions rather than
+hard-coded Hotel/Office branches.
 
-Selected routes are clipped against territory rectangles to form
-**obligations**. Local generation records each obligation as:
+The generic structure planner runs for every manifestation-bearing area. It
+creates a connected major trunk, optional major wing, secondary
+branches/bridges, service circulation when the structural program calls for
+it, junction/terminus nodes, and role-derived anchors. The structural program
+guides which candidate routes are selected and how much circulation a
+manifestation receives.
 
-- `exact` — the planned line fits directly;
-- `adapted` — a deterministic local dogleg preserves the planned
-  entry/exit while moving the interior segment to a safe line;
-- `failed` — the territory cannot safely realize it; the reason is retained
-  for debugging instead of silently replacing it with unrelated architecture.
+Selected routes are clipped against territories as **obligations**. Each local
+realization remains explicit:
 
-Special-space anchors are applied to suitable non-circulation blocks near
-their planned topology node, so a lobby/atrium/ballroom is attached to the
-district network rather than randomly replacing a corridor-bearing territory.
+- `exact` — planned world-space route fits directly;
+- `adapted` — deterministic local dogleg preserves the obligation;
+- `failed` — cannot safely fit; failure remains inspectable.
+
+After the district-scale structure is realized, the generic local-space planner
+handles access depth, bounded local circulation, parcels and archetype
+compatibility. Poolrooms and Parking now use the same structure/local-space
+pipeline as the other manifestation-bearing areas rather than remaining on a
+separate special-case hall path.
+
 
 ### 4. Pair rules: how areas meet (areas.js, layout.js)
 
@@ -175,8 +180,8 @@ All pair decisions are canonical and cached by the territory-pair key.
 
 ### 5. Local space planning and interiors (spaceplan.js, interior.js, zones.js)
 
-For Hotel/Office territories covered by a district structure plan, generation
-now separates **space planning** from **semantic room generation**:
+For every territory covered by a manifestation structure plan, generation
+separates **space planning** from **semantic room generation**:
 
 1. Realize district route obligations as exact/adapted/failed geometry.
 2. Analyze the residual floor as rectangles adjacent to circulation.
@@ -189,11 +194,11 @@ now separates **space planning** from **semantic room generation**:
    forcing a dense room archetype into them.
 6. Only then select a semantic archetype compatible with the parcel.
 
-The planner is generic. Current policies exist for Hotel, Offices, Backrooms,
-Poolrooms, Parking, Home and Maintenance; structured Hotel/Office interiors
-are the first consumers. The important contract is independent of a particular
-room name: dense cellular archetypes require intentional access and a
-compatible geometry envelope.
+The planner is generic. Current policies exist for all configured semantic
+areas, and every manifestation-bearing area now consumes the same structural
+and local-space pipeline. The important contract is independent of a
+particular room name: dense cellular archetypes require intentional access and
+a compatible geometry envelope.
 
 This prevents arbitrary residual rectangles from stretching their assigned
 semantic type. For example, `guest` is no longer accepted for any rectangle;
@@ -209,10 +214,9 @@ Planning is intentionally bounded:
 - direct rectangle/segment/graph operations only;
 - no raster flood-fill, open-ended search or regenerate-until-valid loop.
 
-Areas without district structure retain their established local grammar:
-Backrooms irregular subdivision, Poolrooms/Parking halls, Home houses/gardens
-and Maintenance plant-room pockets. The generic planner/policy API is available
-for those area-specific structure systems when they gain district-scale plans.
+Areas without a manifestation structure retain their established local
+grammar: Backrooms uses irregular subdivision, Home uses houses/gardens and
+Maintenance uses plant-room pockets.
 
 After planning, `zones.js` supplies semantic detail (office, guest, open,
 gallery, courtyard, machinery, pools, parking, etc.), and `interior.js`
@@ -267,21 +271,27 @@ room in a 1.8 km square is reachable.
 ### Generation debugger
 
 Planner diagnostics are drawn as live overlays rather than cached map tiles.
-The **Generation stage** selector exposes the calculation in order:
+The **Generation stage** selector now exposes the full calculation:
 
-1. DNA regions;
-2. DNA candidate circulation lattice;
-3. selected district routes plus junctions/anchors;
-4. clipped territory obligations;
-5. exact/adapted/failed district-route realization;
-6. local space planning;
-7. boundary reconciliation.
+1. area manifestations;
+2. structural-program regions;
+3. Architecture DNA;
+4. candidate circulation lattice;
+5. selected structure;
+6. territory obligations;
+7. exact/adapted/failed circulation realization;
+8. local space planning;
+9. boundary reconciliation.
 
-Local-space overlays expose the next decision layer independently: parcel
-boundaries, access ownership, derived local circulation and geometry/access
-violations. Selected district-route hierarchy remains separately visible for
-major, secondary and service circulation. Debug drawing consumes cached
-generation records; enabling an overlay does not rerun planning.
+The manifestation view shows the lobes that define each spatial occurrence and
+its substrate cuts. The structural-program view shows generic roles such as
+core, branch, open, service, connector, terminal and void before they become
+semantic room types.
+
+Local-space overlays continue to expose parcel boundaries, access ownership,
+derived local circulation and geometry/access violations. Debug rendering
+reads cached generation records; turning on an overlay does not rerun planning.
+
 
 ## Data API (for a game)
 
@@ -290,14 +300,18 @@ const W = new BR.World(seed);                  // caches are bounded; limits can
 W.collect(x0, y0, x1, y1, budgetMs, { interiors: true })
                                                // -> { territories, interiors, boundaries, done }
 W.territoriesIn(x0, y0, x1, y1)                // plan only (cheap)
-W.final(T)                                     // area name of territory T
+W.final(T)                                     // semantic area name
+W.manifestation(T)                             // spatial manifestation containing T
+W.manifestationsIn(x0, y0, x1, y1)             // visible manifestation records
+W.program(T)                                   // generic structural program
+W.programsIn(x0, y0, x1, y1)                   // visible structural programs
 W.architecture(T)                              // persistent architecture DNA
-W.structure(T)                                 // district structure plan for this territory
-W.structuresIn(x0, y0, x1, y1)                 // visible Hotel/Office structure plans
+W.structure(T)                                 // selected circulation/anchor structure
+W.structuresIn(x0, y0, x1, y1)                 // visible manifestation structures
 W.interior(T)                                  // -> { obligations, realizations, spacePlan, anchors,
                                                //      blocks, zones, rooms, links, walls, ... }
 W.boundary(A, B)                               // -> { wall, semantic, walls, doors, continuations, links }
-W.inspect(x, y)                                // area / DNA / structure / route / territory / room at a point
+W.inspect(x, y)                                // area / manifestation / program role / structure / room
 BR.pairInfo(W, A, B)                           // the rule decision for a pair
 BR.roomGraph(W, items)                         // walkable graph
 ```
@@ -309,11 +323,12 @@ Geometry is in integer metres, with no rotations. Wall lists are flat
 
 | Where | What |
 |---|---|
-| `areas.js` `AREAS` | per area: colour, split sizes, style, zone weights, landmarks, door/loop/open probabilities, pocket frequency and size |
+| `areas.js` `AREAS` | semantic grammar plus manifestation/scale/program/architecture weights |
 | `areas.js` `RULES` | the pair-rule table above |
-| `areas.js` `CFG` | district lattice spacing, density, warp |
+| `areas.js` `CFG` | manifestation seed spacing, density and field warp |
+| `manifestation.js` | generic footprint grammars, scales, structural roles and role→archetype biases |
 | `layout.js` `CFG` | super-cell size, edge offsets, ear merge thresholds, bypass depth |
-| `structure.js` | district route selection, hierarchy, branch/service structure and special-space anchoring |
+| `structure.js` | generic manifestation route selection, hierarchy and role-derived anchors |
 | `spaceplan.js` | access/depth/frontage policies and hard parcel/local-route caps |
 | `zones.js` | semantic generators plus archetype compatibility filters |
 | `render.js` | colours, LOD thresholds, tile cache size and planner-debug overlays |
@@ -336,12 +351,17 @@ The suite also checks that different seeds give different maps.
 
 **Structure:**
 
+- Manifestations are deterministic and use multiple scales and all generic
+  footprint grammars across the canonical seeds.
+- The same semantic identity can appear through multiple manifestation forms.
+- Structural programs span the manifestation-bearing semantic areas and all
+  required generic roles have a core.
 - The territorial tiling remains exact: no gaps or overlaps at about 900k
   sampled points, and area sums match exactly.
 - Former Maintenance-band area pairs use direct strong transitions.
 - Zero automatic Maintenance strips are generated.
 - Maintenance/Home pockets remain contained in one host and retain access.
-- District structure plans remain deterministic through aggressive cache
+- Manifestation structure plans remain deterministic through aggressive cache
   eviction and form connected major/secondary/service route graphs.
 - Territory route obligations remain explicit as exact/adapted/failed.
 - Local space planning obeys its hard parcel/route caps.
@@ -359,20 +379,21 @@ All checks pass for seeds 31337, 7, 12345, 99 and 4242.
 
 ## Limitations / next steps
 
-- The far raster draws the district field itself, so its edges are smooth
-  blobs. From plan zoom up, the same districts snap to territory edges.
-- Area colours are a stand-in theme. The architecture (areas, rules, tiling)
-  is the part this prototype is about.
-- Rooms are axis-aligned. Rotated wings from v1 were dropped, because
-  integer-metre geometry keeps the tiling and door probing exact.
-- District structure planning and the new local-space realization path
-  currently apply to **Hotel and Offices**. The local planner itself is
-  area-generic. Poolrooms and Parking still use their existing hall grammars;
-  future district planners should expose pool/walkway and parking/aisle
-  obligations to the same local-space layer rather than copying Hotel logic.
-- Failed route obligations are retained and visible in the debugger. A future
-  planner can reroute around a cluster of failures at district scope instead
-  of relying only on local dogleg adaptation.
-- No vertical connections yet. Stairs are decorative.
-- Version 1 is tagged `v1-final` in git. Its old modules `sites.js`,
-  `cluster.js` and `corridors.js` are no longer used.
+- The current configuration deliberately assigns Backrooms the `base` role.
+  The manifestation engine itself is role-driven: the configured `base` area
+  becomes substrate, `district` areas automatically participate in
+  manifestations/structure planning, and `pocket` areas remain contained
+  replacements. No manifestation/structure code enumerates semantic names.
+- Manifestation footprints are composed from axis-aligned lobe primitives and
+  are sampled at territory centres; final area boundaries therefore remain
+  rectilinear at plan/detail zoom.
+- Structural-program roles are generic, but each semantic area still needs
+  useful archetype weights for those roles to produce convincing content.
+- Rooms are axis-aligned. Rotated wings from v1 remain intentionally excluded
+  because integer-metre geometry keeps tiling and door probing exact.
+- Failed route obligations remain explicit. A future higher-level rerouter can
+  repair clusters of failures across a manifestation instead of relying only
+  on local dogleg adaptation.
+- Vertical connectivity is not planned yet; stairs remain decorative.
+- Version 1 is tagged `v1-final`; its old `sites.js`, `cluster.js` and
+  `corridors.js` modules are unused.
