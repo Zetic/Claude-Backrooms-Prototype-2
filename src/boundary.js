@@ -153,7 +153,14 @@
     if (n > 0 && !hasContinuation) {
       pick(gather(d0, false), n, 'door');
       if (!chosen.length) for (const d of [1.4, 2.2, 3.2]) { pick(gather(d, false), 1, 'passage'); if (chosen.length) break; }
-      if (!chosen.length) W.stats.doorFailures++;
+      if (!chosen.length) {
+        // A plan-level door can occasionally land on a zone whose actual
+        // floor does not reach this edge (round rooms, solids, etc.). Treat
+        // that physical edge as omitted only when the same bounded base-pair
+        // bypass used by optional boundaries already guarantees another route.
+        // Otherwise retain the failure diagnostic.
+        if (!(BR.bypass && BR.bypass(W, A, B))) W.stats.doorFailures++;
+      }
     }
 
     // Door gaps are added to the structural continuation gaps above.
