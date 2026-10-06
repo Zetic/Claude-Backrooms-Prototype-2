@@ -158,15 +158,7 @@
     for(let yi=0;yi<Y.length-1;yi++)for(let xi=0;xi<X.length-1;xi++){const x0=X[xi],x1=X[xi+1],y0=Y[yi],y1=Y[yi+1],cx=(x0+x1)/2,cy=(y0+y1)/2;
       const cover=pieces.filter((p)=>cx>p.q[0]-1e-9&&cx<p.q[2]+1e-9&&cy>p.q[1]-1e-9&&cy<p.q[3]+1e-9)
         .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));
-      let r=cover.length?cover[0].r:null;
-      // Adapted doglegs can otherwise leave sub-room slivers at the corner of
-      // two route rectangles. Absorb those cells into the adjacent route;
-      // they are circulation fillets, not legitimate 1 m closets.
-      if(!r&&Math.min(x1-x0,y1-y0)<1.4){
-        const near=pieces.filter((p)=>p.q[0]<=x1+1e-9&&p.q[2]>=x0-1e-9&&p.q[1]<=y1+1e-9&&p.q[3]>=y0-1e-9)
-          .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));
-        if(near.length)r=near[0].r;
-      }
+      const r=cover.length?cover[0].r:null;
       cells.push({x0,y0,x1,y1,tag:r?r.routeId:null,r});}
     const used=new Set();
     for(let i=0;i<cells.length;i++){if(used.has(i))continue;const c=cells[i];let x1=c.x1;used.add(i);
@@ -406,18 +398,28 @@
       return out;
     };
     const P = (e, s) => (e.v ? [e.c, s] : [s, e.c]);
-    // 1. Planned route fragments that belong to the same route are one
-    // circulation feature even when an adapted dogleg creates a short shared
-    // edge. Join these before probabilistic interior openings.
+    // 1. Planned circulation fragments meeting inside a territory are one
+    // route network. This includes junctions between different selected route
+    // IDs and very short dogleg edges.
     const uf = makeUF(n);
     for (const e of adj) {
       const fa = R[e.a].flow, fb = R[e.b].flow;
-      if (!fa || !fb || fa.key !== fb.key || e.len < 0.55) continue;
-      const pad = Math.min(0.2, e.len * 0.2), cand = spots(e, e.s0 + pad, e.s1 - pad);
-      if (!cand.length) continue;
-      const [sp, rr] = cand[Math.floor(cand.length / 2)], pc = P(e, sp);
-      uf.union(e.a, e.b); e.open = true;
-      links.push({ a: rr[0], b: rr[1], x: pc[0], y: pc[1], w: e.len, kind: 'route' });
+      if (!fa || !fb || e.len < 0.05) continue;
+      const sp = (e.s0 + e.s1) / 2, rr = rooms(e, sp);
+      if (!rr) continue;
+      const pc = P(e, sp); uf.union(e.a, e.b); e.open = true;
+      links.push({ a: rr[0], b: rr[1], x: pc[0], y: pc[1], w: e.len, kind: fa.key === fb.key ? 'route' : 'junction' });
+    }
+    // Sub-room geometric slivers created where a dogleg or finite route end
+    // cuts the partition are absorbed topologically by opening their longest
+    // available short edge. They remain ordinary floor, not fake corridors.
+    for (const e of adj) {
+      if (e.open || e.len < 0.35) continue;
+      const a=R[e.a],b=R[e.b],amin=Math.min(a.x1-a.x0,a.y1-a.y0),bmin=Math.min(b.x1-b.x0,b.y1-b.y0);
+      if (amin >= 1.4 && bmin >= 1.4) continue;
+      const sp=(e.s0+e.s1)/2,rr=rooms(e,sp);if(!rr)continue;
+      const pc=P(e,sp);uf.union(e.a,e.b);e.open=true;
+      links.push({a:rr[0],b:rr[1],x:pc[0],y:pc[1],w:e.len,kind:'merge'});
     }
     // 1b. walls that open up entirely (or into a wide opening)
     for (const e of adj) {
