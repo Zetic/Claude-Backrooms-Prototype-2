@@ -1,22 +1,17 @@
 /*
  * interior.js - level 3: the rooms inside one territory.
  *
- *   1. bands     - maintenance strips the plan says this territory carves
- *   2. blocks    - the territory is cut in its AREA's style:
- *                    irregular (Backrooms)  random guillotine cuts, any grain
- *                    spine     (Offices)    corridor spine (+ cross corridor),
- *                                           suites along it
- *                    hotel     (Hotel)      spine with single rooms, a lobby
- *                    hall      (Poolrooms, Parking) one or two huge halls plus
- *                                           a strip of service rooms
- *                    house     (Home)       a residential layout
- *                    utility   (Maintenance pocket) plant rooms
- *                  or, rarely, one landmark block (grand hall, atrium...)
- *   3. zones     - every block is filled from the zone catalogue (zones.js)
- *                  with the area's weights, avoiding its neighbours' types
- *   4. connect   - shared walls between blocks: some open up, then a random
- *                  spanning tree of doors (corridors first, service strips
- *                  last) plus loops. Doors only where both sides are floor.
+ *   1. obligations - selected district routes are realized first where the
+ *                    area has a district structure plan
+ *   2. local plan  - residual floor is divided into bounded access catchments,
+ *                    local circulation and geometry-validated parcels
+ *   3. blocks      - areas without district structure use their existing
+ *                    irregular/hall/house/utility grammar
+ *   4. zones       - semantic archetypes are selected only after geometry and
+ *                    access are known; incompatible dense types are rejected
+ *   5. connect     - shared walls between blocks: some open up, then a random
+ *                  spanning tree of doors (circulation first) plus loops.
+ *                  Doors are only placed where both sides are floor.
  *
  * The result lists rooms (graph nodes), links (graph edges inside the
  * territory) and drawing primitives, all in world coordinates.
@@ -392,7 +387,7 @@
   /**
    * Openings between the blocks of a territory, recorded as links between
    * rooms (the room graph). Corridor walls are tried first and service strips
-   * last, so suites open onto corridors and service bands get few doors.
+   * last, so occupied spaces preferentially open onto circulation.
    */
   function connect(I, rng, st) {
     const R = I.blocks, n = R.length, Zs = I.zones;
