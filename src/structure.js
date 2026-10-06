@@ -28,9 +28,14 @@
     return { bounds: [bx[0], by[0], bx[1], by[1]], lines: out };
   }
   const nearest = (a, v) => a.slice().sort((x, y) => Math.abs(x.line - v) - Math.abs(y.line - v) || x.line - y.line);
-  const route = (key, n, hierarchy, axis, line, s0, s1, width, role) => ({
-    id: key + '|route|' + n, hierarchy, axis, line, s0: Math.min(s0, s1), s1: Math.max(s0, s1), width, role
-  });
+  const route = (key, n, hierarchy, axis, line, s0, s1, width, role) => {
+    // Territory geometry is integer-metre. Quantize finite route termini too,
+    // otherwise a 0.07 m remainder at a terminus can become a meaningless
+    // micro-room when the local partition is cut around the route.
+    s0 = Math.round(s0); s1 = Math.round(s1);
+    return { id: key + '|route|' + n, hierarchy, axis, line: Math.round(line),
+      s0: Math.min(s0, s1), s1: Math.max(s0, s1), width, role };
+  };
   const point = (R, start) => R.axis === 'x' ? [start ? R.s0 : R.s1, R.line] : [R.line, start ? R.s0 : R.s1];
   function intersection(A, B) {
     if (A.axis === B.axis) return null;
