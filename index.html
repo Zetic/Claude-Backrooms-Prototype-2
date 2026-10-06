@@ -163,6 +163,7 @@
     const A = BR.AREAS[r.area];
     let html = '<b>' + A.name + '</b> &middot; ' + A.role + (r.area !== r.base ? ' in ' + BR.AREAS[r.base].name : '') +
       '<br>territory ' + T.key + ' &middot; ' + (b[2] - b[0]) + '×' + (b[3] - b[1]) + ' m';
+    if (r.dna) html += '<br>DNA ' + r.dna.key + ' &middot; ' + r.dna.majorAxis.toUpperCase() + '-axis &middot; ' + r.dna.corridorWidth + 'm corridor &middot; ' + r.dna.module + 'm module';
     if (r.block) html += '<br>zone ' + r.block.zone + (r.block.sub.length > 1 ? ' (' + r.block.sub.join(' › ') + ')' : '') + (r.room ? ' &middot; ' + r.room.kind : '');
     $('info').innerHTML = html;
     if (hoverKey !== T.key) { hoverKey = T.key; dirty = true; }
