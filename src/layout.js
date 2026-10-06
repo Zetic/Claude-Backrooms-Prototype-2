@@ -127,7 +127,8 @@
       for (const r of rects) { bx0 = Math.min(bx0, r[0]); by0 = Math.min(by0, r[1]); bx1 = Math.max(bx1, r[2]); by1 = Math.max(by1, r[3]); }
       return {
         key: i + ',' + j + ':' + k, i, j, k, rects, cx, cy,
-        base: a.area, district: a.district,
+        base: a.area, district: a.district, manifestation: a.manifestation || a.district,
+        manifestationForm: a.form || null, manifestationScale: a.scale || null,
         h: hash4(seed, i, j, k * 16 + S.TERR),
         bbox: [bx0, by0, bx1, by1],
         _adj: null, _final: undefined, _front: undefined
