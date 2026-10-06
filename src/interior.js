@@ -396,10 +396,22 @@
       return out;
     };
     const P = (e, s) => (e.v ? [e.c, s] : [s, e.c]);
-    // 1. walls that open up entirely (or into a wide opening)
+    // 1. Planned route fragments that belong to the same route are one
+    // circulation feature even when an adapted dogleg creates a short shared
+    // edge. Join these before probabilistic interior openings.
     const uf = makeUF(n);
     for (const e of adj) {
-      if (e.len < 2) continue;
+      const fa = R[e.a].flow, fb = R[e.b].flow;
+      if (!fa || !fb || fa.key !== fb.key || e.len < 0.55) continue;
+      const pad = Math.min(0.2, e.len * 0.2), cand = spots(e, e.s0 + pad, e.s1 - pad);
+      if (!cand.length) continue;
+      const [sp, rr] = cand[Math.floor(cand.length / 2)], pc = P(e, sp);
+      uf.union(e.a, e.b); e.open = true;
+      links.push({ a: rr[0], b: rr[1], x: pc[0], y: pc[1], w: e.len, kind: 'route' });
+    }
+    // 1b. walls that open up entirely (or into a wide opening)
+    for (const e of adj) {
+      if (e.open || e.len < 2) continue;
       const a = R[e.a], b = R[e.b];
       let p = 0;
       if (svc(e.a) || svc(e.b)) p = svc(e.a) && svc(e.b) ? 0.95 : 0;
