@@ -25,6 +25,10 @@
   const DEFAULT_SCALES = { small:1.2, medium:2.5, large:1, regional:0.2 };
   const DEFAULT_ROLES = { core:1, branch:1.4, open:0.8, service:0.55, landmark:0.35, connector:0.7, terminal:0.55, void:0.25, repeating:1.7 };
 
+  const ROLE_DEFAULT = {
+    core:0.35, branch:0.8, open:0.3, service:0.25, landmark:0.3,
+    connector:0.45, terminal:0.55, void:0.2, repeating:0.85
+  };
   const ROLE_ZONE_BIAS = {
     core:       { open:1.9, gallery:1.5, courtyard:1.45, ring:1.25, round:1.2, pools:1.2, parking:1.15 },
     branch:     { office:1.2, guest:1.2, stalls:1.15, warren:1.15, corridorRooms:1.2, pools:1.1, parking:1.1 },
@@ -203,8 +207,8 @@
   }
 
   function programZoneWeights(area,role,base){
-    const out={},bias=ROLE_ZONE_BIAS[role]||{};
-    for(const k in (base||{}))out[k]=base[k]*(bias[k]||1);
+    const out={},bias=ROLE_ZONE_BIAS[role]||{},fallback=ROLE_DEFAULT[role]===undefined?1:ROLE_DEFAULT[role];
+    for(const k in (base||{}))out[k]=base[k]*(bias[k]===undefined?fallback:bias[k]);
     return out;
   }
 
