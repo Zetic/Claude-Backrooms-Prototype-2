@@ -157,7 +157,17 @@
     const priority=(r)=>BR.STRUCTURE_PRIORITY[r.hierarchy]||0;
     for(let yi=0;yi<Y.length-1;yi++)for(let xi=0;xi<X.length-1;xi++){const x0=X[xi],x1=X[xi+1],y0=Y[yi],y1=Y[yi+1],cx=(x0+x1)/2,cy=(y0+y1)/2;
       const cover=pieces.filter((p)=>cx>p.q[0]-1e-9&&cx<p.q[2]+1e-9&&cy>p.q[1]-1e-9&&cy<p.q[3]+1e-9)
-        .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));const r=cover.length?cover[0].r:null;cells.push({x0,y0,x1,y1,tag:r?r.routeId:null,r});}
+        .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));
+      let r=cover.length?cover[0].r:null;
+      // Adapted doglegs can otherwise leave sub-room slivers at the corner of
+      // two route rectangles. Absorb those cells into the adjacent route;
+      // they are circulation fillets, not legitimate 1 m closets.
+      if(!r&&Math.min(x1-x0,y1-y0)<1.4){
+        const near=pieces.filter((p)=>p.q[0]<=x1+1e-9&&p.q[2]>=x0-1e-9&&p.q[1]<=y1+1e-9&&p.q[3]>=y0-1e-9)
+          .sort((a,b)=>priority(a.r)-priority(b.r)||(a.r.routeId<b.r.routeId?-1:1));
+        if(near.length)r=near[0].r;
+      }
+      cells.push({x0,y0,x1,y1,tag:r?r.routeId:null,r});}
     const used=new Set();
     for(let i=0;i<cells.length;i++){if(used.has(i))continue;const c=cells[i];let x1=c.x1;used.add(i);
       for(let j=i+1;j<cells.length;j++){if(used.has(j))continue;const d=cells[j];if(d.tag===c.tag&&d.y0===c.y0&&d.y1===c.y1&&d.x0===x1){x1=d.x1;used.add(j);}}
